@@ -22,6 +22,7 @@ class TableAccessInfo:
         layer: 레이어 정보 (Mapper, DAO, Service, Controller)
         sql_queries: SQL 쿼리 목록 (상세 정보 포함)
         layer_files: 레이어별 파일 경로 목록
+        modified_files: 수정된 파일 목록 (CodeModifier 결과)
     """
     table_name: str
     columns: List[Dict[str, Any]]  # [{"name": "column_name", "new_column": bool}, ...]
@@ -31,6 +32,7 @@ class TableAccessInfo:
     layer: str = ""
     sql_queries: List[Dict[str, Any]] = field(default_factory=list)
     layer_files: Dict[str, List[str]] = field(default_factory=dict)
+    modified_files: List[Dict[str, Any]] = field(default_factory=list)  # 수정된 파일 정보
     
     def to_dict(self) -> dict:
         """딕셔너리 형태로 변환"""
@@ -42,7 +44,8 @@ class TableAccessInfo:
             "sql_query": self.sql_query,
             "layer": self.layer,
             "sql_queries": self.sql_queries,
-            "layer_files": self.layer_files
+            "layer_files": self.layer_files,
+            "modified_files": self.modified_files
         }
     
     @classmethod
@@ -62,6 +65,7 @@ class TableAccessInfo:
             sql_query=data.get("sql_query"),
             layer=data.get("layer", ""),
             sql_queries=data.get("sql_queries", []),
-            layer_files=data.get("layer_files", {})
+            layer_files=data.get("layer_files", {}),
+            modified_files=data.get("modified_files", [])
         )
 

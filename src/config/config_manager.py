@@ -31,11 +31,11 @@ class ConfigurationManager:
     # JSON 스키마 정의: 필수 필드와 타입 검증
     CONFIG_SCHEMA = {
         "type": "object",
-        "required": ["project_path", "source_file_types", "sql_wrapping_type", "access_tables"],
+        "required": ["target_project", "source_file_types", "sql_wrapping_type", "access_tables"],
         "properties": {
-            "project_path": {
+            "target_project": {
                 "type": "string",
-                "description": "프로젝트 루트 경로"
+                "description": "대상 프로젝트 루트 경로"
             },
             "source_file_types": {
                 "type": "array",
@@ -149,7 +149,7 @@ class ConfigurationManager:
         jsonschema를 사용하여 설정 데이터의 스키마를 검증합니다.
         
         필수 필드:
-        - project_path: 프로젝트 경로
+        - target_project: 대상 프로젝트 경로
         - source_file_types: 소스 파일 타입 목록
         - sql_wrapping_type: SQL Wrapping 타입
         - access_tables: 접근 테이블 목록
@@ -169,17 +169,27 @@ class ConfigurationManager:
             )
     
     @property
-    def project_path(self) -> Path:
+    def target_project(self) -> Path:
         """
-        프로젝트 경로를 반환합니다.
+        대상 프로젝트 경로를 반환합니다.
         
         Returns:
-            Path: 프로젝트 루트 경로
+            Path: 대상 프로젝트 루트 경로
         """
         if self._config_data is None:
             raise ConfigurationError("설정 데이터가 로드되지 않았습니다.")
         
-        return Path(self._config_data["project_path"])
+        return Path(self._config_data["target_project"])
+    
+    @property
+    def project_path(self) -> Path:
+        """
+        프로젝트 경로를 반환합니다. (하위 호환성을 위해 유지)
+        
+        Returns:
+            Path: 대상 프로젝트 루트 경로
+        """
+        return self.target_project
     
     @property
     def source_file_types(self) -> List[str]:

@@ -33,6 +33,7 @@ from src.persistence.cache_manager import CacheManager
 from src.models.source_file import SourceFile
 from src.models.table_access_info import TableAccessInfo
 from src.models.modification_record import ModificationRecord
+from src.modifier.code_modifier import CodeModifier
 
 
 class CLIController:
@@ -524,7 +525,7 @@ class CLIController:
                 table_data.append([
                     info.table_name,
                     len(info.access_files),
-                    ", ".join(info.columns[:3]) + ("..." if len(info.columns) > 3 else ""),
+                    ", ".join([col.get("name", col) if isinstance(col, dict) else col for col in info.columns[:3]]) + ("..." if len(info.columns) > 3 else ""),
                     info.layer,
                     info.query_type
                 ])
@@ -549,7 +550,9 @@ class CLIController:
                 print(f"\n테이블: {info.table_name} ({len(info.access_files)}개 파일)")
                 print(f"  레이어: {info.layer}")
                 print(f"  쿼리 타입: {info.query_type}")
-                print(f"  칼럼: {', '.join(info.columns) if info.columns else 'N/A'}")
+                # columns는 이제 객체 배열이므로 이름만 추출
+                column_names = [col.get("name", col) if isinstance(col, dict) else col for col in info.columns]
+                print(f"  칼럼: {', '.join(column_names) if column_names else 'N/A'}")
                 print(f"  접근 파일:")
                 if info.access_files:
                     for file_path in info.access_files:
@@ -762,6 +765,9 @@ class CLIController:
         """
         modify 명령어 핸들러
         
+        CodeModifier를 사용하여 소스 코드를 자동으로 수정합니다.
+        분석 결과는 persistence_manager에서 로드합니다.
+        
         Args:
             args: 파싱된 인자
             
@@ -779,74 +785,91 @@ class CLIController:
             
             # Data Persistence Manager 초기화
             persistence_manager = DataPersistenceManager(project_path)
-            cache_manager = persistence_manager.cache_manager or CacheManager()
             
-            # 1. 소스 파일 로드
-            print("  [1/3] 소스 파일 로드 중...")
+            # 분석 결과 확인 및 로드
+            print("  [1/2] 분석 결과 확인 중...")
             try:
-                source_files_data = persistence_manager.load_from_file("source_files.json", SourceFile)
-                source_files = [SourceFile.from_dict(f) if isinstance(f, dict) else f for f in source_files_data]
+                table_access_info_data = persistence_manager.load_from_file("table_access_info.json", TableAccessInfo)
+                if not table_access_info_data:
+                    print("  오류: 테이블 접근 정보를 찾을 수 없습니다. 먼저 'analyze' 명령어를 실행하세요.")
+                    return 1
+                
+                # TableAccessInfo 객체로 변환
+                table_access_info_list = []
+                for info in table_access_info_data:
+                    if isinstance(info, dict):
+                        table_access_info_list.append(TableAccessInfo.from_dict(info))
+                    elif isinstance(info, TableAccessInfo):
+                        table_access_info_list.append(info)
+                
+                if not table_access_info_list:
+                    print("  수정할 테이블 접근 정보가 없습니다.")
+                    return 0
+                
+                print(f"  ✓ {len(table_access_info_list)}개의 테이블 접근 정보를 로드했습니다.")
+                
             except PersistenceError:
-                print("  오류: 소스 파일 정보를 찾을 수 없습니다. 먼저 'analyze' 명령어를 실행하세요.")
+                print("  오류: 테이블 접근 정보를 찾을 수 없습니다. 먼저 'analyze' 명령어를 실행하세요.")
                 return 1
             
-            print(f"  ✓ {len(source_files)}개의 소스 파일을 로드했습니다.")
+            # CodeModifier를 사용하여 파일 수정
+            print("  [2/2] 암복호화 코드 삽입 중...")
             
-            # 2. DB 접근 파일 식별
-            print("  [2/3] DB 접근 파일 식별 중...")
-            java_parser = JavaASTParser(cache_manager=cache_manager)
-            xml_parser = XMLMapperParser()
-            call_graph_builder = CallGraphBuilder(java_parser=java_parser, cache_manager=cache_manager)
-            
-            db_analyzer = DBAccessAnalyzer(
+            # CodeModifier 초기화
+            code_modifier = CodeModifier(
                 config_manager=config_manager,
-                xml_parser=xml_parser,
-                java_parser=java_parser,
-                call_graph_builder=call_graph_builder
+                project_root=Path(project_path)
             )
             
-            table_access_info_list = db_analyzer.analyze(source_files)
+            total_success = 0
+            total_failed = 0
+            total_skipped = 0
             
-            # 테이블별로 파일 그룹화
-            files_to_modify = {}
-            for info in table_access_info_list:
-                for file_path in info.access_files:
-                    if file_path not in files_to_modify:
-                        files_to_modify[file_path] = []
-                    files_to_modify[file_path].append({
-                        "table": info.table_name,
-                        "columns": info.columns
-                    })
-            
-            print(f"  ✓ {len(files_to_modify)}개의 파일을 수정 대상으로 식별했습니다.")
-            
-            # 3. 파일별 암복호화 코드 삽입
-            print("  [3/3] 암복호화 코드 삽입 중...")
-            modification_records = []
-            
-            # Code Modifier가 없으므로 기본 메시지만 출력
-            if args.dry_run:
-                print("\n[미리보기 모드] 다음 파일들이 수정될 예정입니다:")
-                for file_path, tables in files_to_modify.items():
-                    print(f"  - {Path(file_path).name}")
-                    for table_info in tables:
-                        print(f"    테이블: {table_info['table']}, 칼럼: {', '.join(table_info['columns'][:3])}")
-            else:
-                print("  Code Modifier가 구현되지 않았습니다.")
-                print("  실제 파일 수정 기능은 Code Modifier 모듈이 필요합니다.")
-                # TODO: Code Modifier 구현 후 실제 수정 로직 추가
-            
-            # 수정 기록 저장
-            if modification_records:
-                persistence_manager.save_to_file(
-                    [r.to_dict() for r in modification_records],
-                    "modification_records.json"
+            # 각 테이블별로 수정 수행
+            for table_info in table_access_info_list:
+                print(f"\n  테이블 '{table_info.table_name}' 처리 중...")
+                
+                result = code_modifier.modify_sources(
+                    table_access_info=table_info,
+                    dry_run=args.dry_run
                 )
+                
+                if result.get("success"):
+                    modifications = result.get("modifications", [])
+                    successful = sum(1 for m in modifications if m.get("status") == "success")
+                    failed = sum(1 for m in modifications if m.get("status") == "failed")
+                    skipped = sum(1 for m in modifications if m.get("status") == "skipped")
+                    
+                    total_success += successful
+                    total_failed += failed
+                    total_skipped += skipped
+                    
+                    print(f"    ✓ 성공: {successful}개, 실패: {failed}개, 수정없음: {skipped}개")
+                    
+                    # 수정된 정보를 table_access_info에 저장
+                    table_info.modified_files = modifications
+                else:
+                    error = result.get("error", "알 수 없는 오류")
+                    print(f"    ✗ 오류: {error}")
+                    total_failed += len(table_info.access_files)
             
-            print("\n파일 수정이 완료되었습니다.")
-            if not args.dry_run and modification_records:
-                print(f"  - 수정된 파일: {len(modification_records)}개")
-            self.logger.info("파일 수정 완료")
+            # 수정된 table_access_info 저장
+            persistence_manager.save_to_file(
+                [info.to_dict() for info in table_access_info_list],
+                "table_access_info.json"
+            )
+            
+            # 통계 출력
+            print(f"\n모든 테이블에 대한 파일 수정 작업이 완료되었습니다.")
+            print(f"  - 성공: {total_success}개 파일")
+            if total_failed > 0:
+                print(f"  - 실패: {total_failed}개 파일")
+            if total_skipped > 0:
+                print(f"  - 수정없음: {total_skipped}개 파일")
+            if args.dry_run:
+                print("\n[미리보기 모드] 실제 파일은 수정되지 않았습니다.")
+            
+            self.logger.info(f"파일 수정 완료: 성공 {total_success}개, 실패 {total_failed}개, 수정없음 {total_skipped}개")
             return 0
             
         except ConfigurationError as e:
