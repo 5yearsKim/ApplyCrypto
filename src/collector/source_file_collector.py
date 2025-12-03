@@ -47,7 +47,7 @@ class SourceFileCollector:
         self._config_manager = config_manager
         self._project_path = config_manager.project_path
         self._source_file_types = config_manager.source_file_types
-        self._seen_files: Set[Path] = set()  # 중복 제거를 위한 Set
+        self._seen_files: Set[Path] = set[Path]()  # 중복 제거를 위한 Set
         
         # 제외할 디렉터리: 기본값과 config에서 가져온 값 병합
         self._excluded_dirs = self.EXCLUDED_DIRS.copy()

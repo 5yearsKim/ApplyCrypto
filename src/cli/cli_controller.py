@@ -280,20 +280,20 @@ class CLIController:
         try:
             # 설정 파일 로드
             config_manager = self.load_config(args.config)
-            project_path = config_manager.project_path
+            target_project = config_manager.target_project
             
             self.logger.info("프로젝트 분석 시작...")
             print("프로젝트 분석을 시작합니다...")
             
             # Data Persistence Manager 초기화
-            persistence_manager = DataPersistenceManager(project_path)
+            persistence_manager = DataPersistenceManager(target_project)
             cache_manager = persistence_manager.cache_manager or CacheManager()
             
             # 1. 소스 파일 수집
             print("  [1/5] 소스 파일 수집 중...")
             self.logger.info("소스 파일 수집 시작")
             collector = SourceFileCollector(config_manager)
-            source_files = list(collector.collect())
+            source_files = list[SourceFile](collector.collect())
             print(f"  ✓ {len(source_files)}개의 소스 파일을 수집했습니다.")
             self.logger.info(f"소스 파일 수집 완료: {len(source_files)}개")
             
@@ -422,20 +422,20 @@ class CLIController:
             self.logger.info("정보 조회 시작...")
             
             # analyze 명령어와 동일한 경로를 사용하기 위해 설정 파일 로드 시도
-            # project_path는 참조용이고, 실제 output_dir은 현재 작업 디렉터리에 생성됨
-            project_path = Path(".")
+            # target_project는 참조용이고, 실제 output_dir은 현재 작업 디렉터리에 생성됨
+            target_project = Path(".")
             try:
                 # 기본 설정 파일 경로 시도
                 config_path = "config.json"
                 if Path(config_path).exists():
                     config_manager = ConfigurationManager(config_path)
-                    project_path = config_manager.project_path
+                    target_project = config_manager.target_project
             except Exception:
                 # 설정 파일이 없거나 로드 실패 시 현재 디렉터리 사용
                 pass
             
             # DataPersistenceManager 초기화 (output_dir은 현재 작업 디렉터리에 생성됨)
-            persistence_manager = DataPersistenceManager(project_path)
+            persistence_manager = DataPersistenceManager(target_project)
             
             if args.all:
                 self._list_all_files(persistence_manager)
@@ -777,14 +777,14 @@ class CLIController:
         try:
             # 설정 파일 로드
             config_manager = self.load_config(args.config)
-            project_path = config_manager.project_path
+            target_project = config_manager.target_project
             
             mode = "미리보기" if args.dry_run else "실제 수정"
             self.logger.info(f"파일 수정 시작 (모드: {mode})...")
             print(f"파일 수정을 시작합니다 (모드: {mode})...")
             
             # Data Persistence Manager 초기화
-            persistence_manager = DataPersistenceManager(project_path)
+            persistence_manager = DataPersistenceManager(target_project)
             
             # 분석 결과 확인 및 로드
             print("  [1/2] 분석 결과 확인 중...")
@@ -818,7 +818,7 @@ class CLIController:
             # CodeModifier 초기화
             code_modifier = CodeModifier(
                 config_manager=config_manager,
-                project_root=Path(project_path)
+                project_root=Path(target_project)
             )
             
             total_success = 0

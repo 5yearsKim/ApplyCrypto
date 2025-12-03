@@ -1,0 +1,254 @@
+[
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/config/applicationContext.xml",
+    "relative_path": "src/config/applicationContext.xml",
+    "filename": "applicationContext.xml",
+    "extension": ".xml",
+    "size": 3507,
+    "modified_time": "2025-10-31T15:48:00.417821",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/dao/MapInterceptor.java",
+    "relative_path": "src/com/mybatis/dao/MapInterceptor.java",
+    "filename": "MapInterceptor.java",
+    "extension": ".java",
+    "size": 4047,
+    "modified_time": "2025-10-31T15:48:00.416386",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/dao/DepartmentMapper.java",
+    "relative_path": "src/com/mybatis/dao/DepartmentMapper.java",
+    "filename": "DepartmentMapper.java",
+    "extension": ".java",
+    "size": 413,
+    "modified_time": "2025-10-31T15:48:00.416146",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/dao/BookMapper.java",
+    "relative_path": "src/com/mybatis/dao/BookMapper.java",
+    "filename": "BookMapper.java",
+    "extension": ".java",
+    "size": 1084,
+    "modified_time": "2025-10-31T15:48:00.415892",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/dao/RecordMapper.java",
+    "relative_path": "src/com/mybatis/dao/RecordMapper.java",
+    "filename": "RecordMapper.java",
+    "extension": ".java",
+    "size": 406,
+    "modified_time": "2025-10-31T15:48:00.416516",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/dao/EmployeeMapper.java",
+    "relative_path": "src/com/mybatis/dao/EmployeeMapper.java",
+    "filename": "EmployeeMapper.java",
+    "extension": ".java",
+    "size": 1582,
+    "modified_time": "2025-10-31T15:48:00.416276",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/utils/HttpRequestUtil.java",
+    "relative_path": "src/com/mybatis/utils/HttpRequestUtil.java",
+    "filename": "HttpRequestUtil.java",
+    "extension": ".java",
+    "size": 2013,
+    "modified_time": "2025-10-31T15:48:00.417556",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/utils/Jackson.java",
+    "relative_path": "src/com/mybatis/utils/Jackson.java",
+    "filename": "Jackson.java",
+    "extension": ".java",
+    "size": 808,
+    "modified_time": "2025-10-31T15:48:00.417652",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/controller/EmpController.java",
+    "relative_path": "src/com/mybatis/controller/EmpController.java",
+    "filename": "EmpController.java",
+    "extension": ".java",
+    "size": 10639,
+    "modified_time": "2025-11-27T22:07:57.900815",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/controller/RecordController.java",
+    "relative_path": "src/com/mybatis/controller/RecordController.java",
+    "filename": "RecordController.java",
+    "extension": ".java",
+    "size": 3457,
+    "modified_time": "2025-10-31T15:48:00.415663",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/controller/BookController.java",
+    "relative_path": "src/com/mybatis/controller/BookController.java",
+    "filename": "BookController.java",
+    "extension": ".java",
+    "size": 10001,
+    "modified_time": "2025-10-31T15:48:00.414539",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/controller/EmployeeController.java",
+    "relative_path": "src/com/mybatis/controller/EmployeeController.java",
+    "filename": "EmployeeController.java",
+    "extension": ".java",
+    "size": 9770,
+    "modified_time": "2025-11-27T22:07:53.281701",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/beans/interceptor.java",
+    "relative_path": "src/com/mybatis/beans/interceptor.java",
+    "filename": "interceptor.java",
+    "extension": ".java",
+    "size": 1504,
+    "modified_time": "2025-10-31T15:48:00.414281",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/beans/Department.java",
+    "relative_path": "src/com/mybatis/beans/Department.java",
+    "filename": "Department.java",
+    "extension": ".java",
+    "size": 1060,
+    "modified_time": "2025-10-31T15:48:00.413626",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/beans/User.java",
+    "relative_path": "src/com/mybatis/beans/User.java",
+    "filename": "User.java",
+    "extension": ".java",
+    "size": 1213,
+    "modified_time": "2025-10-31T15:48:00.414130",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/beans/MapParam.java",
+    "relative_path": "src/com/mybatis/beans/MapParam.java",
+    "filename": "MapParam.java",
+    "extension": ".java",
+    "size": 839,
+    "modified_time": "2025-10-31T15:48:00.413801",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/beans/Book.java",
+    "relative_path": "src/com/mybatis/beans/Book.java",
+    "filename": "Book.java",
+    "extension": ".java",
+    "size": 1534,
+    "modified_time": "2025-10-31T15:48:00.413536",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/beans/Record.java",
+    "relative_path": "src/com/mybatis/beans/Record.java",
+    "filename": "Record.java",
+    "extension": ".java",
+    "size": 1672,
+    "modified_time": "2025-10-31T15:48:00.413911",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/beans/Employee.java",
+    "relative_path": "src/com/mybatis/beans/Employee.java",
+    "filename": "Employee.java",
+    "extension": ".java",
+    "size": 2027,
+    "modified_time": "2025-11-26T21:10:25.310404",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/service/ExcleImpl.java",
+    "relative_path": "src/com/mybatis/service/ExcleImpl.java",
+    "filename": "ExcleImpl.java",
+    "extension": ".java",
+    "size": 2927,
+    "modified_time": "2025-10-31T15:48:00.417216",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/service/EmployeeService.java",
+    "relative_path": "src/com/mybatis/service/EmployeeService.java",
+    "filename": "EmployeeService.java",
+    "extension": ".java",
+    "size": 3309,
+    "modified_time": "2025-11-27T22:07:48.395076",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/service/DepartmentService.java",
+    "relative_path": "src/com/mybatis/service/DepartmentService.java",
+    "filename": "DepartmentService.java",
+    "extension": ".java",
+    "size": 578,
+    "modified_time": "2025-10-31T15:48:00.416972",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/service/BookService.java",
+    "relative_path": "src/com/mybatis/service/BookService.java",
+    "filename": "BookService.java",
+    "extension": ".java",
+    "size": 2382,
+    "modified_time": "2025-10-31T15:48:00.416857",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/config/mybatis/mapper/employee-mapper.xml",
+    "relative_path": "src/config/mybatis/mapper/employee-mapper.xml",
+    "filename": "employee-mapper.xml",
+    "extension": ".xml",
+    "size": 7014,
+    "modified_time": "2025-11-26T17:18:06.932334",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/config/mybatis/mapper/book-mapper.xml",
+    "relative_path": "src/config/mybatis/mapper/book-mapper.xml",
+    "filename": "book-mapper.xml",
+    "extension": ".xml",
+    "size": 1983,
+    "modified_time": "2025-10-31T15:48:00.418449",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/config/mybatis/mapper/record-mapper.xml",
+    "relative_path": "src/config/mybatis/mapper/record-mapper.xml",
+    "filename": "record-mapper.xml",
+    "extension": ".xml",
+    "size": 1683,
+    "modified_time": "2025-10-31T15:48:00.419008",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/src/config/mybatis/mapper/department-mapper.xml",
+    "relative_path": "src/config/mybatis/mapper/department-mapper.xml",
+    "filename": "department-mapper.xml",
+    "extension": ".xml",
+    "size": 2377,
+    "modified_time": "2025-10-31T15:48:00.418555",
+    "tags": []
+  },
+  {
+    "path": "/Users/jihun.kim/Documents/src/book-ssm/web/WEB-INF/web.xml",
+    "relative_path": "web/WEB-INF/web.xml",
+    "filename": "web.xml",
+    "extension": ".xml",
+    "size": 1501,
+    "modified_time": "2025-10-31T15:48:00.485296",
+    "tags": []
+  }
+]

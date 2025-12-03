@@ -1,93 +1,21 @@
 {
 	"meta": {
-		"generatedAt": "2025-11-23T09:02:18.898Z",
-		"tasksAnalyzed": 10,
+		"generatedAt": "2025-11-25T15:08:00.036Z",
+		"tasksAnalyzed": 1,
 		"totalTasks": 10,
-		"analysisCount": 10,
+		"analysisCount": 1,
 		"thresholdScore": 5,
 		"projectName": "Taskmaster",
 		"usedResearch": false
 	},
 	"complexityAnalysis": [
 		{
-			"taskId": 1,
-			"taskTitle": "설정 관리 시스템 구현 (Configuration Manager)",
-			"complexityScore": 3,
-			"recommendedSubtasks": 4,
-			"expansionPrompt": "Configuration Manager 구현을 다음 세부 작업으로 분해하세요: (1) JSON 파일 로드 및 파싱 기능 구현, (2) jsonschema를 사용한 스키마 검증 로직 구현, (3) 프로퍼티 메서드를 통한 타입 안전한 설정값 접근 인터페이스 구현, (4) 파일 없음, 잘못된 JSON, 스키마 위반 등 다양한 에러 처리 및 기본값 설정 로직 구현",
-			"reasoning": "Configuration Manager는 JSON 파일 로드, 스키마 검증, 설정값 접근, 에러 처리 등 기본적인 기능들로 구성되어 있습니다. 외부 라이브러리(json, jsonschema)를 활용하며, 비즈니스 로직이 단순하고 의존성이 없어 복잡도가 낮습니다. 단위 테스트도 명확하고 직관적입니다."
-		},
-		{
-			"taskId": 2,
-			"taskTitle": "소스 파일 수집 및 인덱싱 (Source File Collector)",
-			"complexityScore": 4,
-			"recommendedSubtasks": 5,
-			"expansionPrompt": "Source File Collector 구현을 다음 세부 작업으로 분해하세요: (1) pathlib.Path를 사용한 재귀적 디렉터리 탐색 기능 구현, (2) 설정 기반 파일 필터링 로직 구현, (3) 파일 메타데이터(경로, 파일명, 확장자, 크기, 수정 시간) 추출 기능 구현, (4) 중복 제거 및 크로스 플랫폼 경로 호환성 처리 구현, (5) 제너레이터 패턴을 활용한 메모리 효율적 구현 및 성능 최적화",
-			"reasoning": "Source File Collector는 재귀적 파일 탐색, 필터링, 메타데이터 추출, 중복 제거, 크로스 플랫폼 호환성 등 여러 기술적 고려사항이 있습니다. 대규모 프로젝트 처리 시 성능 최적화가 필요하고, 제너레이터 패턴 적용으로 메모리 효율성을 확보해야 합니다. Configuration Manager에 의존하며 테스트 데이터 생성이 필요합니다."
-		},
-		{
-			"taskId": 3,
-			"taskTitle": "CLI 기본 구조 및 명령어 파서 구현",
-			"complexityScore": 4,
-			"recommendedSubtasks": 5,
-			"expansionPrompt": "CLI Controller 구현을 다음 세부 작업으로 분해하세요: (1) argparse를 사용한 기본 CLI 구조 및 서브파서 설정 구현, (2) analyze, list, modify 명령어 정의 및 각 옵션 파싱 로직 구현, (3) 명령어별 도움말 메시지 및 에러 처리 구현, (4) 진행 상황 표시 및 로깅 기능 구현, (5) 각 명령어와 비즈니스 로직 모듈 간의 연결 인터페이스 설계",
-			"reasoning": "CLI Controller는 argparse 라이브러리를 활용하여 복수의 명령어와 옵션을 관리해야 합니다. 명령어별 서브파서 구조, 옵션 조합 처리, 도움말 메시지, 에러 처리, 로깅 등 여러 기능이 필요합니다. Configuration Manager에 의존하며, 이후 다른 모듈들과의 통합이 필요합니다."
-		},
-		{
-			"taskId": 4,
-			"taskTitle": "데이터 영속화 계층 구현 (Data Persistence Layer)",
-			"complexityScore": 5,
-			"recommendedSubtasks": 6,
-			"expansionPrompt": "DataPersistenceManager 구현을 다음 세부 작업으로 분해하세요: (1) 데이터 모델(SourceFile, Method, CallRelation, TableAccessInfo, ModificationRecord) 정의 및 JSON 스키마 작성, (2) 커스텀 JSON 인코더/디코더 구현(datetime, Path 등 기본 타입 외 처리), (3) JSON 직렬화 및 역직렬화 로직 구현, (4) 프로젝트별 결과 디렉터리 생성 및 파일 관리 기능 구현, (5) 타임스탐프 기반 버전 관리 및 캐싱 기능 구현, (6) 손상된 파일, 권한 문제 등 에러 처리 및 데이터 검증 구현",
-			"reasoning": "DataPersistenceManager는 여러 데이터 모델의 직렬화/역직렬화, 커스텀 JSON 인코더/디코더 구현, 버전 관리, 캐싱 등 복잡한 기능들을 포함합니다. 데이터 무결성 보장, 에러 처리, 성능 최적화 등 고려사항이 많습니다. Configuration Manager와 Source File Collector에 의존합니다."
-		},
-		{
-			"taskId": 5,
-			"taskTitle": "Java AST 파서 구현 (Java AST Parser)",
-			"complexityScore": 7,
-			"recommendedSubtasks": 7,
-			"expansionPrompt": "JavaASTParser 구현을 다음 세부 작업으로 분해하세요: (1) jAST 라이브러리를 사용한 Java 파일 파싱 및 AST 변환 기능 구현, (2) 클래스 정보 추출(클래스명, 부모 클래스, 인터페이스, 어노테이션) 로직 구현, (3) 메서드 정보 추출(메서드명, 반환 타입, 파라미터, 접근 제어자) 로직 구현, (4) 필드 정보 추출 및 메서드 본문 분석 구현, (5) jAST 실패 시 javalang 또는 정규표현식 기반 fallback 파서 구현, (6) 파싱된 AST 캐싱 기능 구현, (7) 최신 Java 문법(람다, 스트림 등) 지원 및 에러 처리",
-			"reasoning": "JavaASTParser는 복잡한 AST 분석, 여러 파싱 라이브러리 활용, fallback 메커니즘, 최신 Java 문법 지원 등 높은 기술적 난이도를 가집니다. 파싱 실패 시 대체 방안 마련, 캐싱 구현, 다양한 Java 코드 패턴 처리 등이 필요합니다. Configuration Manager와 Source File Collector에 의존합니다."
-		},
-		{
-			"taskId": 6,
-			"taskTitle": "XML Mapper 파서 구현 (XML Mapper Parser)",
-			"complexityScore": 6,
-			"recommendedSubtasks": 6,
-			"expansionPrompt": "XMLMapperParser 구현을 다음 세부 작업으로 분해하세요: (1) lxml을 사용한 MyBatis Mapper XML 파일 파싱 기능 구현, (2) <select>, <insert>, <update>, <delete> 태그에서 SQL 쿼리 추출 로직 구현, (3) CDATA 섹션 처리 및 SQL 주석 제거 기능 구현, (4) 정규표현식을 사용한 테이블명 및 칼럼명 추출 로직 구현, (5) MyBatis 파라미터 표기법(#{}, ${}) 인식 및 Mapper 메서드 매핑 구현, (6) 복잡한 JOIN 쿼리, 잘못된 XML 등 다양한 시나리오에 대한 에러 처리 구현",
-			"reasoning": "XMLMapperParser는 XML 파싱, 복잡한 정규표현식 패턴 매칭, CDATA 처리, MyBatis 특화 기능 등 여러 기술적 도전과제를 포함합니다. SQL 쿼리 분석의 정확성이 중요하며, 다양한 SQL 패턴과 MyBatis 문법을 지원해야 합니다. Configuration Manager와 Source File Collector에 의존합니다."
-		},
-		{
-			"taskId": 7,
-			"taskTitle": "Call Graph 생성 및 메서드 추적 (Call Graph Builder)",
-			"complexityScore": 7,
-			"recommendedSubtasks": 7,
-			"expansionPrompt": "CallGraphBuilder 구현을 다음 세부 작업으로 분해하세요: (1) Java AST 분석을 통한 메서드 호출 식별 로직 구현, (2) networkx를 사용한 호출 관계 그래프 생성 및 관리 구현, (3) Spring Framework 어노테이션(@RequestMapping, @GetMapping 등) 인식을 통한 REST API 엔드포인트 식별 구현, (4) 깊이 우선 탐색(DFS) 알고리즘을 사용한 호출 체인 생성 구현, (5) Controller, Service, DAO, Mapper 레이어 자동 분류 로직 구현, (6) 순환 참조 감지 및 무한 루프 방지 메커니즘 구현, (7) 생성된 Call Graph 캐싱 및 성능 최적화",
-			"reasoning": "CallGraphBuilder는 그래프 알고리즘, 깊이 우선 탐색, 순환 참조 감지, 레이어 분류 등 복잡한 로직을 포함합니다. networkx 라이브러리 활용, Spring Framework 어노테이션 인식, 정적 분석의 한계 이해 등이 필요합니다. Java AST Parser에 의존하며, 대규모 프로젝트에서의 성능이 중요합니다."
-		},
-		{
-			"taskId": 8,
-			"taskTitle": "DB 접근 코드 자동 식별 (DB Access Analyzer)",
-			"complexityScore": 6,
-			"recommendedSubtasks": 6,
-			"expansionPrompt": "DBAccessAnalyzer 구현을 다음 세부 작업으로 분해하세요: (1) XML Mapper Parser와 Java AST Parser 결과를 조합하여 테이블 접근 파일 식별 로직 구현, (2) 각 파일에 접근하는 테이블명을 태그로 부여하는 기능 구현, (3) Mapper XML, DTO, DAO, Service, Controller 파일 레이어별 분류 로직 구현, (4) Strategy Pattern을 사용한 sql_wrapping_type별 처리 전략 구현, (5) 특정 칼럼에 접근하는 코드 식별 및 칼럼 레벨 분석 구현, (6) 테이블 접근 파일 간 의존성 추적 및 결과 저장 기능 구현",
-			"reasoning": "DBAccessAnalyzer는 두 개의 파서 결과를 통합하여 분석해야 하며, Strategy Pattern 적용, 레이어 분류, 의존성 추적 등 복잡한 로직을 포함합니다. SQL 쿼리 분석의 정확성과 Call Graph 활용이 중요합니다. Java AST Parser와 XML Mapper Parser에 의존합니다."
-		},
-		{
-			"taskId": 9,
-			"taskTitle": "암복호화 코드 자동 삽입 (Code Modifier)",
-			"complexityScore": 8,
-			"recommendedSubtasks": 7,
-			"expansionPrompt": "CodeModifier 구현을 다음 세부 작업으로 분해하세요: (1) Java AST 수정을 통한 DTO/VO getter/setter 메서드 식별 및 분석 구현, (2) CryptoService.encrypt/decrypt 메서드 호출 코드 생성 및 AST에 삽입하는 로직 구현, (3) k-sign.CryptoService import 문 자동 추가 기능 구현, (4) 암복호화 적용 이유와 위치를 명시하는 한글 주석 삽입 기능 구현, (5) 수정된 AST를 Java 소스 코드로 언파싱하는 기능 구현, (6) 원본 파일 백업 생성 및 수정 실패 시 복원 메커니즘 구현, (7) 수정 내역을 ModificationRecord로 기록하고 비즈니스 로직 보호 검증 구현",
-			"reasoning": "CodeModifier는 AST 수정, 코드 생성, 언파싱 등 가장 복잡한 작업을 수행합니다. 비즈니스 로직 손상 방지, 백업 및 복원, 수정 기록 관리 등 안정성이 매우 중요합니다. Java AST Parser와 DB Access Analyzer에 의존하며, 테스트와 검증이 매우 중요합니다."
-		},
-		{
-			"taskId": 10,
-			"taskTitle": "CLI 명령어 구현 및 통합 (CLI Commands Implementation)",
-			"complexityScore": 8,
-			"recommendedSubtasks": 9,
-			"expansionPrompt": "CLI Commands 구현을 다음 세부 작업으로 분해하세요: (1) analyze 명령어 구현 - 설정 로드부터 결과 저장까지 전체 워크플로우 통합, (2) list --all 명령어 구현 - 수집된 소스 파일 목록을 테이블 형식으로 출력, (3) list --db 명령어 구현 - 테이블별 접근 파일 목록 출력, (4) list --modified 명령어 구현 - 수정된 파일 목록 출력, (5) list --endpoint 명령어 구현 - REST API 엔드포인트 목록 출력, (6) list --callgraph 명령어 구현 - 특정 엔드포인트의 호출 그래프를 트리 형식으로 출력, (7) modify 명령어 구현 - DB 접근 파일 식별부터 암복호화 코드 삽입까지 전체 워크플로우 통합, (8) --dry-run 옵션 구현 - 실제 수정 없이 미리보기 기능, (9) 결과 포맷팅(tabulate, anytree 등), 에러 처리, 로깅 통합",
-			"reasoning": "CLI Commands Implementation은 모든 이전 모듈들을 통합하는 최상위 작업으로, 가장 높은 복잡도를 가집니다. 여러 명령어의 완전한 구현, 결과 포맷팅, 에러 처리, 로깅, 통합 테스트 등이 필요합니다. 모든 이전 모듈(3, 4, 7, 8, 9)에 의존하며, 전체 시스템의 사용성과 안정성을 결정합니다."
+			"taskId": 11,
+			"taskTitle": "CodeModifier 모듈 구현 및 LLM 기반 소스 코드 자동 수정",
+			"complexityScore": 9,
+			"recommendedSubtasks": 8,
+			"expansionPrompt": "CodeModifier 모듈을 다음 8개의 주요 서브태스크로 분해하세요: (1) LLM 플랫폼 추상화 및 Strategy Pattern 구현 (WatsonX.AI, OpenAI 프로바이더), (2) 프롬프트 템플릿 설계 및 PromptTemplateManager 구현, (3) 칼럼 타입별 암호화 전략 엔진 구현 (평문/부분암호화), (4) 토큰 기반 동적 배치 처리 및 최적화, (5) Unified Diff 파싱 및 CodePatcher 구현, (6) 에러 처리, 롤백, 재시도 로직 구현, (7) 결과 추적 및 TableAccessInfo 데이터 모델 확장, (8) 단위/통합/성능 테스트 작성 및 검증",
+			"reasoning": "이 태스크는 매우 높은 복잡도를 가집니다. 이유는: (1) 두 개의 서로 다른 LLM 플랫폼(WatsonX.AI, OpenAI) 통합으로 인한 API 다양성, (2) 복잡한 프롬프트 엔지니어링 및 템플릿 관리 시스템, (3) 칼럼 타입별 다양한 암호화 전략 구현, (4) 토큰 크기 기반 동적 배치 분할 알고리즘, (5) Unified Diff 형식 파싱 및 patch 명령 실행, (6) 코드 수정 실패 시 롤백 메커니즘, (7) 병렬 처리 및 캐싱 최적화, (8) 광범위한 테스트 전략 (단위/통합/성능/회귀). 또한 Task 8, 10에 의존하며, 소스 코드 자동 수정이라는 고위험 작업입니다."
 		}
 	]
 }
