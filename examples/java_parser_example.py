@@ -5,8 +5,9 @@ Java AST Parser 예제
 """
 
 from parser.java_ast_parser import JavaASTParser
-from persistence.cache_manager import CacheManager
 from pathlib import Path
+
+from persistence.cache_manager import CacheManager
 
 # 캐시 매니저 생성
 cache_dir = Path(".cache")
@@ -66,31 +67,30 @@ public class UserController {
 
 # 임시 파일 생성
 temp_file = Path("temp_UserController.java")
-temp_file.write_text(java_code, encoding='utf-8')
+temp_file.write_text(java_code, encoding="utf-8")
 
 try:
     # 파싱
     tree, error = parser.parse_file(temp_file)
-    
+
     if error:
         print(f"파싱 오류: {error}")
     else:
         # 클래스 정보 추출
         classes = parser.extract_class_info(tree, temp_file)
-        
+
         # 결과 출력
         parser.print_class_info(classes)
-        
+
         # Call Graph 생성 및 출력
         call_graph = parser.build_call_graph(classes)
         parser.print_call_graph(call_graph)
-        
+
         # CallRelation 추출
         relations = parser.extract_call_relations(classes)
         print(f"\n\n총 {len(relations)}개의 호출 관계가 발견되었습니다.")
-        
+
 finally:
     # 임시 파일 삭제
     if temp_file.exists():
         temp_file.unlink()
-

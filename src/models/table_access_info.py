@@ -5,14 +5,14 @@ TableAccessInfo 데이터 모델
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class TableAccessInfo:
     """
     데이터베이스 테이블 접근 정보를 저장하는 데이터 모델
-    
+
     Attributes:
         table_name: 테이블명
         columns: 접근하는 칼럼 정보 목록 (칼럼명과 new_column 정보 포함)
@@ -24,6 +24,7 @@ class TableAccessInfo:
         layer_files: 레이어별 파일 경로 목록
         modified_files: 수정된 파일 목록 (CodeModifier 결과)
     """
+
     table_name: str
     columns: List[Dict[str, Any]]  # [{"name": "column_name", "new_column": bool}, ...]
     access_files: List[str]
@@ -32,8 +33,10 @@ class TableAccessInfo:
     layer: str = ""
     sql_queries: List[Dict[str, Any]] = field(default_factory=list)
     layer_files: Dict[str, List[str]] = field(default_factory=dict)
-    modified_files: List[Dict[str, Any]] = field(default_factory=list)  # 수정된 파일 정보
-    
+    modified_files: List[Dict[str, Any]] = field(
+        default_factory=list
+    )  # 수정된 파일 정보
+
     def to_dict(self) -> dict:
         """딕셔너리 형태로 변환"""
         return {
@@ -45,9 +48,9 @@ class TableAccessInfo:
             "layer": self.layer,
             "sql_queries": self.sql_queries,
             "layer_files": self.layer_files,
-            "modified_files": self.modified_files
+            "modified_files": self.modified_files,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "TableAccessInfo":
         """딕셔너리로부터 TableAccessInfo 객체 생성"""
@@ -56,7 +59,7 @@ class TableAccessInfo:
         if columns and isinstance(columns[0], str):
             # 기존 형식 (문자열 배열)을 객체 배열로 변환
             columns = [{"name": col, "new_column": False} for col in columns]
-        
+
         return cls(
             table_name=data["table_name"],
             columns=columns,
@@ -66,6 +69,5 @@ class TableAccessInfo:
             layer=data.get("layer", ""),
             sql_queries=data.get("sql_queries", []),
             layer_files=data.get("layer_files", {}),
-            modified_files=data.get("modified_files", [])
+            modified_files=data.get("modified_files", []),
         )
-

@@ -8,4 +8,3 @@ from .db_access_analyzer import DBAccessAnalyzer
 from .sql_extractor import SQLExtractor
 
 __all__ = ["DBAccessAnalyzer", "SQLExtractor"]
-

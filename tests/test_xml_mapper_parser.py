@@ -4,11 +4,12 @@ XML Mapper Parser 테스트
 XML Mapper 파서의 기능을 테스트합니다.
 """
 
-import pytest
+from parser.xml_mapper_parser import XMLMapperParser
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from parser.xml_mapper_parser import XMLMapperParser
+import pytest
+
 from models.table_access_info import TableAccessInfo
 
 
@@ -61,7 +62,7 @@ def sample_mapper_xml(temp_dir):
 </mapper>
 """
     file_path = temp_dir / "UserMapper.xml"
-    file_path.write_text(xml_content, encoding='utf-8')
+    file_path.write_text(xml_content, encoding="utf-8")
     return file_path
 
 
@@ -92,7 +93,7 @@ def complex_mapper_xml(temp_dir):
 </mapper>
 """
     file_path = temp_dir / "OrderMapper.xml"
-    file_path.write_text(xml_content, encoding='utf-8')
+    file_path.write_text(xml_content, encoding="utf-8")
     return file_path
 
 
@@ -120,14 +121,14 @@ def cdata_mapper_xml(temp_dir):
 </mapper>
 """
     file_path = temp_dir / "ProductMapper.xml"
-    file_path.write_text(xml_content, encoding='utf-8')
+    file_path.write_text(xml_content, encoding="utf-8")
     return file_path
 
 
 def test_parse_file_success(xml_parser, sample_mapper_xml):
     """파일 파싱 성공 테스트"""
     tree, error = xml_parser.parse_file(sample_mapper_xml)
-    
+
     assert tree is not None
     assert error is None
 
@@ -136,19 +137,23 @@ def test_parse_file_not_found(xml_parser, temp_dir):
     """파일 없음 테스트"""
     non_existent_file = temp_dir / "NonExistent.xml"
     tree, error = xml_parser.parse_file(non_existent_file)
-    
+
     assert tree is None
     assert error is not None
-    assert "파일을 찾을 수 없습니다" in error or "No such file" in error or "오류 발생" in error
+    assert (
+        "파일을 찾을 수 없습니다" in error
+        or "No such file" in error
+        or "오류 발생" in error
+    )
 
 
 def test_extract_sql_tags(xml_parser, sample_mapper_xml):
     """SQL 태그 추출 테스트"""
     tree, _ = xml_parser.parse_file(sample_mapper_xml)
     sql_queries = xml_parser.extract_sql_tags(tree)
-    
+
     assert len(sql_queries) == 5  # findById, findAll, insert, update, delete
-    
+
     # findById 쿼리 확인
     find_by_id = next((q for q in sql_queries if q.id == "findById"), None)
     assert find_by_id is not None
@@ -168,9 +173,9 @@ def test_remove_sql_comments(xml_parser):
     /* 여러 줄
        주석 */
     """
-    
+
     clean_sql = xml_parser.remove_sql_comments(sql_with_comments)
-    
+
     assert "--" not in clean_sql
     assert "/*" not in clean_sql
     assert "*/" not in clean_sql
@@ -184,7 +189,7 @@ def test_extract_table_names(xml_parser):
     select_sql = "SELECT * FROM users WHERE id = 1"
     tables = xml_parser.extract_table_names(select_sql)
     assert "users" in tables
-    
+
     # JOIN 쿼리
     join_sql = """
     SELECT * FROM orders o
@@ -193,17 +198,17 @@ def test_extract_table_names(xml_parser):
     tables = xml_parser.extract_table_names(join_sql)
     assert "orders" in tables
     assert "users" in tables
-    
+
     # INSERT 쿼리
     insert_sql = "INSERT INTO products (name, price) VALUES ('Test', 100)"
     tables = xml_parser.extract_table_names(insert_sql)
     assert "products" in tables
-    
+
     # UPDATE 쿼리
     update_sql = "UPDATE users SET name = 'Test' WHERE id = 1"
     tables = xml_parser.extract_table_names(update_sql)
     assert "users" in tables
-    
+
     # DELETE 쿼리
     delete_sql = "DELETE FROM users WHERE id = 1"
     tables = xml_parser.extract_table_names(delete_sql)
@@ -218,14 +223,14 @@ def test_extract_column_names(xml_parser):
     assert "id" in columns
     assert "name" in columns
     assert "email" in columns
-    
+
     # INSERT 쿼리
     insert_sql = "INSERT INTO users (name, email, created_at) VALUES (?, ?, ?)"
     columns = xml_parser.extract_column_names(insert_sql)
     assert "name" in columns
     assert "email" in columns
     assert "created_at" in columns
-    
+
     # UPDATE 쿼리
     update_sql = "UPDATE users SET name = ?, email = ? WHERE id = ?"
     columns = xml_parser.extract_column_names(update_sql)
@@ -241,9 +246,9 @@ def test_extract_mybatis_parameters(xml_parser):
     AND name = #{name}
     AND status = ${status}
     """
-    
+
     parameters = xml_parser.extract_mybatis_parameters(sql)
-    
+
     assert "id" in parameters
     assert "name" in parameters
     assert "status" in parameters
@@ -253,12 +258,12 @@ def test_create_method_mapping(xml_parser, sample_mapper_xml):
     """메서드 매핑 생성 테스트"""
     tree, _ = xml_parser.parse_file(sample_mapper_xml)
     sql_queries = xml_parser.extract_sql_tags(tree)
-    
+
     find_by_id = next((q for q in sql_queries if q.id == "findById"), None)
     assert find_by_id is not None
-    
+
     mapping = xml_parser.create_method_mapping(find_by_id)
-    
+
     assert mapping.method_signature == "com.example.mapper.UserMapper.findById"
     assert "id" in mapping.parameters
 
@@ -266,9 +271,9 @@ def test_create_method_mapping(xml_parser, sample_mapper_xml):
 def test_extract_table_access_info(xml_parser, sample_mapper_xml):
     """테이블 접근 정보 추출 테스트"""
     table_access_list = xml_parser.extract_table_access_info(sample_mapper_xml)
-    
+
     assert len(table_access_list) > 0
-    
+
     # users 테이블 접근 정보 확인
     users_access = next((t for t in table_access_list if t.table_name == "users"), None)
     assert users_access is not None
@@ -280,7 +285,7 @@ def test_extract_table_access_info(xml_parser, sample_mapper_xml):
 def test_complex_join_query(xml_parser, complex_mapper_xml):
     """복잡한 JOIN 쿼리 처리 테스트"""
     table_access_list = xml_parser.extract_table_access_info(complex_mapper_xml)
-    
+
     # orders와 users 테이블 접근 확인
     table_names = [t.table_name for t in table_access_list]
     assert "orders" in table_names
@@ -292,20 +297,22 @@ def test_cdata_section(xml_parser, cdata_mapper_xml):
     tree, error = xml_parser.parse_file(cdata_mapper_xml)
     assert tree is not None
     assert error is None
-    
+
     sql_queries = xml_parser.extract_sql_tags(tree)
     assert len(sql_queries) > 0
-    
+
     find_products = next((q for q in sql_queries if q.id == "findProducts"), None)
     assert find_products is not None
     assert "SELECT" in find_products.sql.upper()
-    assert "FROM" in find_products.sql.upper() and "products" in find_products.sql.lower()
+    assert (
+        "FROM" in find_products.sql.upper() and "products" in find_products.sql.lower()
+    )
 
 
 def test_parse_mapper_file(xml_parser, sample_mapper_xml):
     """Mapper 파일 완전 파싱 테스트"""
     result = xml_parser.parse_mapper_file(sample_mapper_xml)
-    
+
     assert result["error"] is None
     assert len(result["sql_queries"]) == 5
     assert len(result["method_mappings"]) == 5
@@ -315,11 +322,10 @@ def test_parse_mapper_file(xml_parser, sample_mapper_xml):
 def test_invalid_xml(xml_parser, temp_dir):
     """잘못된 XML 처리 테스트"""
     invalid_xml = temp_dir / "invalid.xml"
-    invalid_xml.write_text("<invalid>unclosed tag", encoding='utf-8')
-    
+    invalid_xml.write_text("<invalid>unclosed tag", encoding="utf-8")
+
     tree, error = xml_parser.parse_file(invalid_xml)
-    
+
     assert tree is None
     assert error is not None
     assert "XML" in error or "구문" in error
-

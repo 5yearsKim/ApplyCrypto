@@ -5,4 +5,3 @@
 from .source_file_collector import SourceFileCollector
 
 __all__ = ["SourceFileCollector"]
-

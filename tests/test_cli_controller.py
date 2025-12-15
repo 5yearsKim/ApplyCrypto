@@ -4,16 +4,17 @@ CLI Controller 테스트
 CLI Controller의 기능을 테스트합니다.
 """
 
-import pytest
 import json
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from datetime import datetime
 
-from src.cli.cli_controller import CLIController
+import pytest
+
 from config.config_manager import ConfigurationManager
 from models.source_file import SourceFile
 from persistence.data_persistence_manager import DataPersistenceManager
+from cli.cli_controller import CLIController
 
 
 @pytest.fixture
@@ -30,16 +31,11 @@ def sample_config_file(temp_dir):
         "project_path": str(temp_dir),
         "source_file_types": [".java", ".xml"],
         "sql_wrapping_type": "mybatis",
-        "access_tables": [
-            {
-                "table_name": "USERS",
-                "columns": ["ID", "NAME", "EMAIL"]
-            }
-        ]
+        "access_tables": [{"table_name": "USERS", "columns": ["ID", "NAME", "EMAIL"]}],
     }
-    
+
     config_file = temp_dir / "config.json"
-    config_file.write_text(json.dumps(config_data, indent=2), encoding='utf-8')
+    config_file.write_text(json.dumps(config_data, indent=2), encoding="utf-8")
     return config_file
 
 
@@ -109,8 +105,10 @@ def test_load_config(cli_controller, sample_config_file):
 def test_list_all_files(cli_controller, temp_dir):
     """list --all 파일 목록 출력 테스트"""
     # Data Persistence Manager 생성
-    persistence_manager = DataPersistenceManager(temp_dir, output_dir=temp_dir / "results")
-    
+    persistence_manager = DataPersistenceManager(
+        temp_dir, output_dir=temp_dir / "results"
+    )
+
     # 샘플 소스 파일 생성
     source_files = [
         SourceFile(
@@ -120,16 +118,15 @@ def test_list_all_files(cli_controller, temp_dir):
             extension=".java",
             size=1000,
             modified_time=datetime.now(),
-            tags=[]
+            tags=[],
         )
     ]
-    
+
     # 파일 저장
     persistence_manager.save_to_file(
-        [f.to_dict() for f in source_files],
-        "source_files.json"
+        [f.to_dict() for f in source_files], "source_files.json"
     )
-    
+
     # list_all_files 호출
     cli_controller._list_all_files(persistence_manager)
     # 예외가 발생하지 않으면 성공
@@ -138,26 +135,28 @@ def test_list_all_files(cli_controller, temp_dir):
 def test_list_db_access(cli_controller, temp_dir):
     """list --db 테이블 접근 정보 출력 테스트"""
     # Data Persistence Manager 생성
-    persistence_manager = DataPersistenceManager(temp_dir, output_dir=temp_dir / "results")
-    
+    persistence_manager = DataPersistenceManager(
+        temp_dir, output_dir=temp_dir / "results"
+    )
+
     # 샘플 테이블 접근 정보 생성
     from models.table_access_info import TableAccessInfo
+
     table_access_info = [
         TableAccessInfo(
             table_name="USERS",
             columns=["ID", "NAME"],
             access_files=[str(temp_dir / "UserMapper.xml")],
             query_type="SELECT",
-            layer="Mapper"
+            layer="Mapper",
         )
     ]
-    
+
     # 파일 저장
     persistence_manager.save_to_file(
-        [t.to_dict() for t in table_access_info],
-        "table_access_info.json"
+        [t.to_dict() for t in table_access_info], "table_access_info.json"
     )
-    
+
     # list_db_access 호출
     cli_controller._list_db_access(persistence_manager)
     # 예외가 발생하지 않으면 성공
@@ -166,24 +165,26 @@ def test_list_db_access(cli_controller, temp_dir):
 def test_list_endpoints(cli_controller, temp_dir):
     """list --endpoint 엔드포인트 목록 출력 테스트"""
     # Data Persistence Manager 생성
-    persistence_manager = DataPersistenceManager(temp_dir, output_dir=temp_dir / "results")
-    
+    persistence_manager = DataPersistenceManager(
+        temp_dir, output_dir=temp_dir / "results"
+    )
+
     # 샘플 Call Graph 데이터 생성
     call_graph_data = {
         "endpoints": [
             {
                 "http_method": "GET",
                 "path": "/api/users/{id}",
-                "method_signature": "UserController.getUser"
+                "method_signature": "UserController.getUser",
             }
         ],
         "node_count": 10,
-        "edge_count": 15
+        "edge_count": 15,
     }
-    
+
     # 파일 저장
     persistence_manager.save_to_file(call_graph_data, "call_graph.json")
-    
+
     # list_endpoints 호출
     cli_controller._list_endpoints(persistence_manager)
     # 예외가 발생하지 않으면 성공
@@ -193,8 +194,8 @@ def test_execute_analyze(cli_controller, sample_config_file, temp_dir):
     """analyze 명령어 실행 테스트"""
     # 임시 Java 파일 생성
     java_file = temp_dir / "User.java"
-    java_file.write_text("public class User {}", encoding='utf-8')
-    
+    java_file.write_text("public class User {}", encoding="utf-8")
+
     # analyze 명령어 실행
     result = cli_controller.execute(["analyze", "--config", str(sample_config_file)])
     # 성공 또는 실패 모두 테스트 (파일이 없어도 에러 처리 확인)

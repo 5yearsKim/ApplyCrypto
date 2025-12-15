@@ -6,8 +6,9 @@ Call Tree 출력 예제
 
 from parser.call_graph_builder import CallGraphBuilder
 from parser.java_ast_parser import JavaASTParser
-from persistence.cache_manager import CacheManager
 from pathlib import Path
+
+from persistence.cache_manager import CacheManager
 
 # 캐시 매니저 생성
 cache_dir = Path(".cache")
@@ -124,39 +125,43 @@ controller_file = temp_dir / "UserController.java"
 service_file = temp_dir / "UserService.java"
 dao_file = temp_dir / "UserDAO.java"
 
-controller_file.write_text(controller_code, encoding='utf-8')
-service_file.write_text(service_code, encoding='utf-8')
-dao_file.write_text(dao_code, encoding='utf-8')
+controller_file.write_text(controller_code, encoding="utf-8")
+service_file.write_text(service_code, encoding="utf-8")
+dao_file.write_text(dao_code, encoding="utf-8")
 
 try:
     print("=" * 60)
     print("Call Tree 출력 예제")
     print("=" * 60)
-    
+
     # Call Graph 생성
     java_files = [controller_file, service_file, dao_file]
     graph = builder.build_call_graph(java_files)
-    
+
     print(f"\n총 {len(graph.nodes())}개의 메서드 노드")
     print(f"총 {len(graph.edges())}개의 호출 관계\n")
-    
+
     # 특정 엔드포인트의 Call Tree 출력
     endpoints = builder.get_endpoints()
     if endpoints:
-        getUser_endpoint = next((ep for ep in endpoints if ep.method_name == "getUser"), None)
+        getUser_endpoint = next(
+            (ep for ep in endpoints if ep.method_name == "getUser"), None
+        )
         if getUser_endpoint:
             print("\n" + "=" * 60)
             print("특정 엔드포인트의 Call Tree (getUser)")
             print("=" * 60)
             builder.print_call_tree(endpoint=getUser_endpoint, show_layers=True)
-        
-        createUser_endpoint = next((ep for ep in endpoints if ep.method_name == "createUser"), None)
+
+        createUser_endpoint = next(
+            (ep for ep in endpoints if ep.method_name == "createUser"), None
+        )
         if createUser_endpoint:
             print("\n" + "=" * 60)
             print("특정 엔드포인트의 Call Tree (createUser)")
             print("=" * 60)
             builder.print_call_tree(endpoint=createUser_endpoint, show_layers=True)
-    
+
     # 모든 엔드포인트의 Call Tree 출력
     print("\n" + "=" * 60)
     print("모든 엔드포인트의 Call Tree")
@@ -166,6 +171,6 @@ try:
 finally:
     # 임시 파일 삭제
     import shutil
+
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
-
