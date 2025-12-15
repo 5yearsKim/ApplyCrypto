@@ -97,7 +97,7 @@ class DBAccessAnalyzer:
             List[TableAccessInfo]: 테이블 접근 정보 목록
         """
         # sql_extraction_results.json에서 SQL 쿼리 정보 로드 (한 번만)
-        from ..persistence.data_persistence_manager import DataPersistenceManager
+        from persistence.data_persistence_manager import DataPersistenceManager
 
         persistence_manager = DataPersistenceManager(self.config_manager.target_project)
         sql_extraction_results = persistence_manager.load_from_file(
