@@ -35,7 +35,9 @@ class MockLLMProvider(LLMProvider):
             or os.getenv("MOCK_LLM_RESPONSE")
             or "This is a mock response from MockLLMProvider."
         )
-        logger.info(f"Mock LLM Provider 초기화 완료 (응답 길이: {len(self.mock_response)})")
+        logger.info(
+            f"Mock LLM Provider 초기화 완료 (응답 길이: {len(self.mock_response)})"
+        )
 
     def call(
         self,
@@ -55,16 +57,16 @@ class MockLLMProvider(LLMProvider):
             Dict[str, Any]: Mock 응답 딕셔너리
         """
         logger.debug(f"Mock LLM 호출됨. 프롬프트 길이: {len(prompt)}")
-        
+
         # 간단한 토큰 수 계산 (단어 수 * 1.3 정도)
         tokens_used = int(len(self.mock_response.split()) * 1.3)
-        
+
         result = {
             "content": self.mock_response,
             "tokens_used": tokens_used,
             "model": "mock-model-v1",
         }
-        
+
         return result
 
     def validate_response(self, response: Dict[str, Any]) -> bool:

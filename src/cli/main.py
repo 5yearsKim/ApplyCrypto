@@ -8,8 +8,9 @@ ApplyCrypto CLI 진입점
   applycrypto [command] [options]
 """
 
-from dotenv import load_dotenv
 import sys
+
+from dotenv import load_dotenv
 
 from cli.cli_controller import CLIController
 

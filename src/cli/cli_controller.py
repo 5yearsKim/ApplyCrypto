@@ -36,10 +36,8 @@ from models.source_file import SourceFile
 from models.table_access_info import TableAccessInfo
 from modifier.code_modifier import CodeModifier
 from persistence.cache_manager import CacheManager
-from persistence.data_persistence_manager import (
-    DataPersistenceManager,
-    PersistenceError,
-)
+from persistence.data_persistence_manager import (DataPersistenceManager,
+                                                  PersistenceError)
 
 
 class CLIController:
@@ -144,6 +142,11 @@ class CLIController:
             "--dry-run",
             action="store_true",
             help="실제 파일 수정 없이 미리보기만 수행합니다",
+        )
+        modify_parser.add_argument(
+            "--all",
+            action="store_true",
+            help="사용자 확인 없이 모든 변경사항을 자동으로 적용합니다",
         )
 
         return parser
@@ -885,18 +888,34 @@ class CLIController:
             self.logger.exception(f"호출 그래프 조회 중 오류: {e}")
             print(f"오류: {e}", file=sys.stderr)
 
+    def _print_diff(self, file_path: str, diff: str):
+        """Diff 내용을 컬러로 출력 (간단 구현)"""
+        print(f"\n[Diff] {file_path}")
+        print("-" * 80)
+        for line in diff.splitlines():
+            if line.startswith("+"):
+                print(f"\033[92m{line}\033[0m")  # Green
+            elif line.startswith("-"):
+                print(f"\033[91m{line}\033[0m")  # Red
+            elif line.startswith("@@"):
+                print(f"\033[96m{line}\033[0m")  # Cyan
+            else:
+                print(line)
+        print("-" * 80)
+
+    def _get_user_confirmation(self) -> str:
+        """사용자 확인 입력"""
+        while True:
+            choice = input(
+                "\n이 변경사항을 적용하시겠습니까? [y/n/a/q] (y:적용, n:건너뛰기, a:모두적용, q:중단): "
+            ).lower()
+            if choice in ["y", "n", "a", "q"]:
+                return choice
+            print("잘못된 입력입니다.")
+
     def _handle_modify(self, args: argparse.Namespace) -> int:
         """
         modify 명령어 핸들러
-
-        CodeModifier를 사용하여 소스 코드를 자동으로 수정합니다.
-        분석 결과는 persistence_manager에서 로드합니다.
-
-        Args:
-            args: 파싱된 인자
-
-        Returns:
-            int: 종료 코드
         """
         try:
             # 설정 파일 로드
@@ -922,7 +941,6 @@ class CLIController:
                     )
                     return 1
 
-                # TableAccessInfo 객체로 변환
                 table_access_info_list = []
                 for info in table_access_info_data:
                     if isinstance(info, dict):
@@ -944,52 +962,95 @@ class CLIController:
                 )
                 return 1
 
-            # CodeModifier를 사용하여 파일 수정
-            print("  [2/2] 암복호화 코드 삽입 중...")
-
             # CodeModifier 초기화
             code_modifier = CodeModifier(
                 config_manager=config_manager, project_root=Path(target_project)
             )
 
+            print("  [2/2] 수정 계획 생성 및 적용 중...")
+
             total_success = 0
             total_failed = 0
             total_skipped = 0
+            apply_all = args.all
 
-            # 각 테이블별로 수정 수행
             for table_info in table_access_info_list:
                 print(f"\n  테이블 '{table_info.table_name}' 처리 중...")
 
-                result = code_modifier.modify_sources(
-                    table_access_info=table_info, dry_run=args.dry_run
+                # 트래킹 시작 (테이블 단위)
+                code_modifier.result_tracker.start_tracking()
+
+                # 1. 계획 생성
+                try:
+                    plans = code_modifier.generate_modification_plans(table_info)
+                except Exception as e:
+                    self.logger.error(f"계획 생성 실패: {e}")
+                    print(f"    ✗ 계획 생성 실패: {e}")
+                    total_failed += len(table_info.access_files)  # 대략적인 수치
+                    continue
+
+                table_modifications = []
+
+                # 2. 계획 적용 (Interactive loop)
+                for plan in plans:
+                    if plan.status in ["failed", "skipped"]:
+                        # 이미 실패/스킵된 계획은 그대로 적용(기록)
+                        res = code_modifier.apply_modification_plan(
+                            plan, dry_run=args.dry_run
+                        )
+                        table_modifications.append(res)
+                        if plan.status == "failed":
+                            total_failed += 1
+                        else:
+                            total_skipped += 1
+                        continue
+
+                    # Diff 출력 및 사용자 확인
+                    if not apply_all:
+                        self._print_diff(plan.file_path, plan.unified_diff)
+                        choice = self._get_user_confirmation()
+
+                        if choice == "q":
+                            print("작업을 중단합니다.")
+                            return 0
+                        elif choice == "a":
+                            apply_all = True
+                        elif choice == "n":
+                            print("  -> 건너뜀")
+                            # 스킵 기록
+                            plan.status = "skipped"
+                            plan.reason = "User skipped"
+                            res = code_modifier.apply_modification_plan(
+                                plan, dry_run=args.dry_run
+                            )
+                            table_modifications.append(res)
+                            total_skipped += 1
+                            continue
+
+                    # 적용
+                    res = code_modifier.apply_modification_plan(
+                        plan, dry_run=args.dry_run
+                    )
+                    table_modifications.append(res)
+
+                    if res.get("status") == "success":
+                        print(f"  -> 적용 완료: {Path(plan.file_path).name}")
+                        total_success += 1
+                    else:
+                        print(f"  -> 실패: {res.get('error')}")
+                        total_failed += 1
+
+                # 결과 추적 및 저장 (테이블 단위)
+                code_modifier.result_tracker.end_tracking()
+                code_modifier.result_tracker.update_table_access_info(
+                    table_info, table_modifications
+                )
+                code_modifier.result_tracker.save_modification_history(
+                    table_info.table_name, table_modifications
                 )
 
-                if result.get("success"):
-                    modifications = result.get("modifications", [])
-                    successful = sum(
-                        1 for m in modifications if m.get("status") == "success"
-                    )
-                    failed = sum(
-                        1 for m in modifications if m.get("status") == "failed"
-                    )
-                    skipped = sum(
-                        1 for m in modifications if m.get("status") == "skipped"
-                    )
-
-                    total_success += successful
-                    total_failed += failed
-                    total_skipped += skipped
-
-                    print(
-                        f"    ✓ 성공: {successful}개, 실패: {failed}개, 수정없음: {skipped}개"
-                    )
-
-                    # 수정된 정보를 table_access_info에 저장
-                    table_info.modified_files = modifications
-                else:
-                    error = result.get("error", "알 수 없는 오류")
-                    print(f"    ✗ 오류: {error}")
-                    total_failed += len(table_info.access_files)
+            # 최종 저장
+            code_modifier.result_tracker.save_statistics()
 
             # 수정된 table_access_info 저장
             persistence_manager.save_to_file(
@@ -998,18 +1059,14 @@ class CLIController:
             )
 
             # 통계 출력
-            print(f"\n모든 테이블에 대한 파일 수정 작업이 완료되었습니다.")
-            print(f"  - 성공: {total_success}개 파일")
-            if total_failed > 0:
-                print(f"  - 실패: {total_failed}개 파일")
-            if total_skipped > 0:
-                print(f"  - 수정없음: {total_skipped}개 파일")
+            print(f"\n모든 작업이 완료되었습니다.")
+            print(f"  - 성공: {total_success}개")
+            print(f"  - 실패: {total_failed}개")
+            print(f"  - 건너뜀: {total_skipped}개")
+
             if args.dry_run:
                 print("\n[미리보기 모드] 실제 파일은 수정되지 않았습니다.")
 
-            self.logger.info(
-                f"파일 수정 완료: 성공 {total_success}개, 실패 {total_failed}개, 수정없음 {total_skipped}개"
-            )
             return 0
 
         except ConfigurationError as e:
