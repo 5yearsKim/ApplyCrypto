@@ -12,6 +12,7 @@ from .llm_provider import LLMProvider
 from .mock_llm_provider import MockLLMProvider
 from .openai_provider import OpenAIProvider
 from .watsonx_provider import WatsonXAIProvider
+from .watsonx_provider_on_prem import WatsonXAIOnPremiseProvider
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,30 @@ def create_llm_provider(provider_name: str) -> LLMProvider:
 
         return WatsonXAIProvider(
             api_key=api_key, api_url=api_url, model_id=model_id, project_id=project_id
+        )
+
+    elif (
+        provider_name_lower == "watsonx_ai_on_prem"
+        or provider_name_lower == "watsonx_on_prem"
+    ):
+        api_key = os.getenv("WATSONX_ON_PREMISE_API_KEY")
+        api_url = os.getenv(
+            "WATSONX_ON_PREMISE_API_URL", "https://cpd-zen.apps.wca.samsunglife.kr"
+        )
+        project_id = os.getenv("WATSONX_ON_PREMISE_PROJECT_ID")
+        model_id = os.getenv(
+            "WATSONX_ON_PREMISE_MODEL_ID", "ibm/granite-3-3-8b-instruct"
+        )
+        user_name = os.getenv("WATSONX_ON_PREMISE_USER_NAME")
+        password = os.getenv("WATSONX_ON_PREMISE_PASSWORD")
+
+        return WatsonXAIOnPremiseProvider(
+            api_key=api_key,
+            api_url=api_url,
+            model_id=model_id,
+            project_id=project_id,
+            user_name=user_name,
+            password=password,
         )
 
     elif provider_name_lower == "openai":

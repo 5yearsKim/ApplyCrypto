@@ -1111,12 +1111,10 @@ class CLIController:
 
         except ImportError as e:
             self.logger.error(f"Type Handler Generator 모듈을 로드할 수 없습니다: {e}")
-
             print(
                 f"오류: Type Handler Generator 모듈을 로드할 수 없습니다: {e}",
                 file=sys.stderr,
             )
-
             return 1
         except Exception as e:
             self.logger.exception(f"Type Handler 수정 중 오류: {e}")
