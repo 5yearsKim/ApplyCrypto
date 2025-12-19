@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 
 [project.scripts]
-applycrypto = "cli.run:main"
+applycrypto = "app.cli.run:main"
 
 
 [tool.setuptools]

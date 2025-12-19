@@ -12,7 +12,7 @@ import sys
 
 from dotenv import load_dotenv
 
-from cli.cli_controller import CLIController
+from app.cli.cli import CLIController
 
 
 def main():
