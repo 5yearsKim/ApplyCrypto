@@ -9,11 +9,13 @@ from collections import defaultdict
 from parser.call_graph_builder import CallGraphBuilder
 from parser.java_ast_parser import JavaASTParser
 from parser.xml_mapper_parser import XMLMapperParser
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from config.config_manager import ConfigurationManager
+from config.config_manager import Configuration
 from models.source_file import SourceFile
 from models.table_access_info import TableAccessInfo
+from persistence.data_persistence_manager import DataPersistenceManager
 
 from .sql_parsing_strategy import SQLParsingStrategy
 
@@ -27,7 +29,7 @@ class DBAccessAnalyzer:
 
     def __init__(
         self,
-        config_manager: ConfigurationManager,
+        config: Configuration,
         sql_strategy: SQLParsingStrategy,
         xml_parser: Optional[XMLMapperParser] = None,
         java_parser: Optional[JavaASTParser] = None,
@@ -37,13 +39,13 @@ class DBAccessAnalyzer:
         DBAccessAnalyzer 초기화
 
         Args:
-            config_manager: 설정 매니저
+            config: 설정 객체
             sql_strategy: SQL 파싱 전략 (필수)
             xml_parser: XML Mapper 파서 (선택적, 하위 호환성을 위해 유지)
             java_parser: Java AST 파서 (선택적)
             call_graph_builder: Call Graph Builder (선택적)
         """
-        self.config_manager = config_manager
+        self.config = config
         self.sql_strategy = sql_strategy
         self.xml_parser = xml_parser  # 하위 호환성을 위해 유지하지만 사용하지 않음
         self.java_parser = java_parser or JavaASTParser()
@@ -51,8 +53,7 @@ class DBAccessAnalyzer:
         self.logger = logging.getLogger(__name__)
 
         # 설정에서 테이블 정보 가져오기
-        # 설정에서 테이블 정보 가져오기
-        self.access_tables = config_manager.get("access_tables", [])
+        self.access_tables = config.access_tables
 
         # 테이블별 칼럼 매핑 생성 (대소문자 무시)
         # 칼럼 정보: {column_name: {"new_column": bool}}
@@ -77,9 +78,7 @@ class DBAccessAnalyzer:
                     col_name = col.name.lower()
                     if col_name:
                         columns_set.add(col_name)
-                        column_info_dict[col_name] = {
-                            "new_column": col.new_column
-                        }
+                        column_info_dict[col_name] = {"new_column": col.new_column}
 
             self.table_column_map[table_name] = columns_set
             self.table_column_info[table_name] = column_info_dict
@@ -94,11 +93,8 @@ class DBAccessAnalyzer:
         Returns:
             List[TableAccessInfo]: 테이블 접근 정보 목록
         """
-        # sql_extraction_results.json에서 SQL 쿼리 정보 로드 (한 번만)
-        from persistence.data_persistence_manager import DataPersistenceManager
-        from pathlib import Path
 
-        persistence_manager = DataPersistenceManager(Path(self.config_manager.get("target_project")))
+        persistence_manager = DataPersistenceManager(Path(self.config.target_project))
         sql_extraction_results = persistence_manager.load_from_file(
             "sql_extraction_results.json"
         )

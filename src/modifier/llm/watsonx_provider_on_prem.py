@@ -77,7 +77,7 @@ class WatsonXAIOnPremiseProvider(LLMProvider):
                 f"{self.api_url}/icp4d-api/v1/authorize",
                 headers=headers,
                 data=json.dumps(data),
-                verify=False
+                verify=False,
             )
             response.raise_for_status()
             return response.json().get("token")
@@ -114,7 +114,7 @@ class WatsonXAIOnPremiseProvider(LLMProvider):
                 "Authorization": f"Bearer {iam_token}",
             }
             body = {
-                "messages": [{"role":"user","text":prompt}],
+                "messages": [{"role": "user", "text": prompt}],
                 "project_id": self.project_id,
                 "model_id": self.model_id,
                 "frequency_penalty": 0,

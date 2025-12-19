@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, List, Set
 
-from config.config_manager import ConfigurationManager
+from config.config_manager import Configuration
 from models.source_file import SourceFile
 
 
@@ -45,26 +45,26 @@ class SourceFileCollector:
         ".mvn",  # 빌드 도구
     }
 
-    def __init__(self, config_manager: ConfigurationManager):
+    def __init__(self, config: Configuration):
         """
         SourceFileCollector 초기화
 
         Args:
-            config_manager: ConfigurationManager 인스턴스
+            config: Configuration 인스턴스
         """
-        self._config_manager = config_manager
-        self._project_path = Path(config_manager.get("target_project"))
-        self._source_file_types = config_manager.get("source_file_types")
+        self._config = config
+        self._project_path = Path(config.target_project)
+        self._source_file_types = config.source_file_types
         self._seen_files: Set[Path] = set[Path]()  # 중복 제거를 위한 Set
 
         # 제외할 디렉터리: 기본값과 config에서 가져온 값 병합
         self._excluded_dirs = self.EXCLUDED_DIRS.copy()
-        config_exclude_dirs = config_manager.get("exclude_dirs")
+        config_exclude_dirs = config.exclude_dirs
         if config_exclude_dirs:
             self._excluded_dirs.update(config_exclude_dirs)
 
         # 제외할 파일 패턴: config에서 가져온 값
-        self._exclude_file_patterns = config_manager.get("exclude_files")
+        self._exclude_file_patterns = config.exclude_files
 
     def collect(self) -> Iterator[SourceFile]:
         """

@@ -10,8 +10,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Type, TypeVar
 
-
-
 from persistence.cache_manager import CacheManager
 from persistence.json_decoder import CustomJSONDecoder
 from persistence.json_encoder import CustomJSONEncoder

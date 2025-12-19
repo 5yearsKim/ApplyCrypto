@@ -30,7 +30,8 @@ from analyzer.db_access_analyzer import DBAccessAnalyzer
 from analyzer.sql_extractor import SQLExtractor
 from analyzer.sql_parsing_strategy import create_strategy
 from collector.source_file_collector import SourceFileCollector
-from config.config_manager import ConfigurationError, ConfigurationManager
+from config.config_manager import Configuration, ConfigurationError
+from config.config_manager import load_config as load_global_config
 from models.modification_record import ModificationRecord
 from models.source_file import SourceFile
 from models.table_access_info import TableAccessInfo
@@ -59,7 +60,7 @@ class CLIController:
         """CLIController 초기화"""
         self.parser = self._create_parser()
         self.logger = self._setup_logging()
-        self.config_manager: Optional[ConfigurationManager] = None
+        self.config: Optional[Configuration] = None
 
     def _create_parser(self) -> argparse.ArgumentParser:
         """
@@ -105,6 +106,12 @@ class CLIController:
             "list",
             help="수집된 정보를 조회합니다",
             description="수집된 정보를 조회합니다. 하나 이상의 옵션을 지정할 수 있습니다.",
+        )
+        list_parser.add_argument(
+            "--config",
+            type=str,
+            default="config.json",
+            help="설정 파일 경로 (기본값: config.json)",
         )
         list_group = list_parser.add_mutually_exclusive_group()
         list_group.add_argument(
@@ -214,7 +221,7 @@ class CLIController:
 
         return parsed_args
 
-    def load_config(self, config_path: str) -> ConfigurationManager:
+    def load_config(self, config_path: str) -> Configuration:
         """
         설정 파일 로드
 
@@ -222,15 +229,15 @@ class CLIController:
             config_path: 설정 파일 경로
 
         Returns:
-            ConfigurationManager: 로드된 설정 관리자
+            Configuration: 로드된 설정 객체
 
         Raises:
             ConfigurationError: 설정 파일 로드 실패 시
         """
         try:
-            self.config_manager = ConfigurationManager(config_path)
+            self.config = load_global_config(config_path)
             self.logger.info(f"설정 파일 로드 성공: {config_path}")
-            return self.config_manager
+            return self.config
         except ConfigurationError as e:
             self.logger.error(f"설정 파일 로드 실패: {e}")
             raise
@@ -282,8 +289,8 @@ class CLIController:
         """
         try:
             # 설정 파일 로드
-            config_manager = self.load_config(args.config)
-            target_project = Path(config_manager.get("target_project"))
+            config = self.load_config(args.config)
+            target_project = Path(config.target_project)
 
             self.logger.info("프로젝트 분석 시작...")
             print("프로젝트 분석을 시작합니다...")
@@ -295,7 +302,7 @@ class CLIController:
             # 1. 소스 파일 수집
             print("  [1/5] 소스 파일 수집 중...")
             self.logger.info("소스 파일 수집 시작")
-            collector = SourceFileCollector(config_manager)
+            collector = SourceFileCollector(config)
             source_files = list[SourceFile](collector.collect())
             print(f"  ✓ {len(source_files)}개의 소스 파일을 수집했습니다.")
             self.logger.info(f"소스 파일 수집 완료: {len(source_files)}개")
@@ -344,7 +351,7 @@ class CLIController:
             # 3. SQL Parsing Strategy 초기 생성
             print("  [3/5] SQL 추출 중...")
             self.logger.info("SQL 추출 시작")
-            sql_wrapping_type = config_manager.get("sql_wrapping_type")
+            sql_wrapping_type = config.sql_wrapping_type
             sql_strategy = create_strategy(sql_wrapping_type)
 
             # SQL Extractor 초기화
@@ -397,7 +404,7 @@ class CLIController:
             print("  [5/5] DB 접근 정보 분석 중...")
             self.logger.info("DB 접근 정보 분석 시작")
             db_analyzer = DBAccessAnalyzer(
-                config_manager=config_manager,
+                config=config,
                 sql_strategy=sql_strategy,
                 xml_parser=xml_parser,
                 java_parser=java_parser,
@@ -457,18 +464,9 @@ class CLIController:
 
             self.logger.info("정보 조회 시작...")
 
-            # analyze 명령어와 동일한 경로를 사용하기 위해 설정 파일 로드 시도
-            # target_project는 참조용이고, 실제 output_dir은 현재 작업 디렉터리에 생성됨
-            target_project = Path(".")
-            try:
-                # 기본 설정 파일 경로 시도
-                config_path = "config.json"
-                if Path(config_path).exists():
-                    config_manager = ConfigurationManager(config_path)
-                    target_project = Path(config_manager.get("target_project"))
-            except Exception:
-                # 설정 파일이 없거나 로드 실패 시 현재 디렉터리 사용
-                pass
+            # 기본 설정 파일 경로 시도
+            config = self.load_config(args.config)
+            target_project = Path(config.target_project)
 
             # DataPersistenceManager 초기화 (output_dir은 현재 작업 디렉터리에 생성됨)
             persistence_manager = DataPersistenceManager(target_project)
@@ -841,17 +839,6 @@ class CLIController:
                 print("     list --callgraph login  (부분 매칭도 가능)")
                 return
 
-            # Call Graph Builder를 다시 생성하여 호출 트리 출력
-            # 설정 파일이 필요하므로 기본 경로 사용
-            try:
-                if not self.config_manager:
-                    ConfigurationManager("config.json")
-            except Exception:
-                print(
-                    "설정 파일을 로드할 수 없습니다. Call Graph를 재생성할 수 없습니다."
-                )
-                return
-
             cache_manager = persistence_manager.cache_manager or CacheManager()
             java_parser = JavaASTParser(cache_manager=cache_manager)
             call_graph_builder = CallGraphBuilder(
@@ -920,15 +907,15 @@ class CLIController:
         """
         try:
             # 설정 파일 로드
-            config_manager = self.load_config(args.config)
+            config = self.load_config(args.config)
 
             # Type Handler 모드 분기
-            if config_manager.get("type_handler", False):
+            if config.type_handler:
                 self.logger.info("Type Handler 모드로 수정을 진행합니다.")
-                return self._handle_modify_with_type_handler(args, config_manager)
+                return self._handle_modify_with_type_handler(args, config)
 
             # 기존 로직 (직접 코드 수정 방식)
-            target_project = Path(config_manager.get("target_project"))
+            target_project = Path(config.target_project)
 
             mode = "미리보기" if args.dry_run else "실제 수정"
             self.logger.info(f"파일 수정 시작 (모드: {mode})...")
@@ -972,7 +959,7 @@ class CLIController:
 
             # CodeModifier 초기화
             code_modifier = CodeModifier(
-                config_manager=config_manager, project_root=Path(target_project)
+                config=config, project_root=Path(target_project)
             )
 
             print("  [2/2] 수정 계획 생성 및 적용 중...")
@@ -1086,7 +1073,7 @@ class CLIController:
             return 1
 
     def _handle_modify_with_type_handler(
-        self, args: argparse.Namespace, config_manager: ConfigurationManager
+        self, args: argparse.Namespace, config: Configuration
     ) -> int:
         """
         Type Handler 방식으로 암복호화를 적용하는 핸들러
@@ -1096,7 +1083,7 @@ class CLIController:
 
         Args:
             args: 파싱된 인자
-            config_manager: 설정 관리자
+            config: 설정 객체
 
         Returns:
             int: 종료 코드
@@ -1105,7 +1092,7 @@ class CLIController:
             from generator.type_handler_generator import TypeHandlerGenerator
 
             self.logger.info("Type Handler Generator 초기화...")
-            generator = TypeHandlerGenerator(config_manager)
+            generator = TypeHandlerGenerator(config)
 
             return generator.execute(dry_run=args.dry_run, apply_all=args.all)
 

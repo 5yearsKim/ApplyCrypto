@@ -1,16 +1,37 @@
 {
-  "project_path": "/path/to/project",
-  "source_file_types": [".java", ".xml"],
+  "target_project": "/absolute/path/to/your/target/project",
+  "source_file_types": [
+    ".java",
+    ".xml"
+  ],
   "sql_wrapping_type": "mybatis",
   "access_tables": [
     {
-      "table_name": "EMPLOYEE",
-      "columns": ["NAME", "JUMIN_NUMBER"]
-    },
-    {
-      "table_name": "CUSTOMER",
-      "columns": ["PHONE", "EMAIL"]
+      "table_name": "EXAMPLE_TABLE",
+      "columns": [
+        "column1",
+        "column2",
+        {
+          "name": "encrypted_column_name",
+          "new_column": true,
+          "column_type": "ssn"
+        }
+      ]
     }
-  ]
+  ],
+  "diff_gen_type": "mybatis_service",
+  "llm_provider": "watsonx_ai",
+  "exclude_dirs": [
+    "target",
+    "build",
+    ".git",
+    "__pycache__"
+  ],
+  "exclude_files": [
+    "*.test.java",
+    "*Test.java"
+  ],
+  "max_tokens_per_batch": 2000,
+  "max_workers": 4,
+  "max_retries": 3
 }
-

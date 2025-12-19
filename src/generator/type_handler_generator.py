@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from config.config_manager import ConfigurationManager
+from config.config_manager import Configuration
 from models.table_access_info import TableAccessInfo
 from modifier.error_handler import ErrorHandler
 from modifier.llm.llm_factory import create_llm_provider
@@ -36,10 +36,26 @@ class TypeHandlerGenerator:
 
     # column_type별 설정 (crypto_code, 클래스명, 설명)
     COLUMN_TYPE_CONFIG = {
-        "dob": {"crypto_code": "T01", "class_name": "DobTypeHandler", "description": "생년월일"},
-        "ssn": {"crypto_code": "T02", "class_name": "SsnTypeHandler", "description": "주민번호"},
-        "name": {"crypto_code": "T03", "class_name": "NameTypeHandler", "description": "이름"},
-        "sex": {"crypto_code": "T04", "class_name": "SexTypeHandler", "description": "성별"},
+        "dob": {
+            "crypto_code": "T01",
+            "class_name": "DobTypeHandler",
+            "description": "생년월일",
+        },
+        "ssn": {
+            "crypto_code": "T02",
+            "class_name": "SsnTypeHandler",
+            "description": "주민번호",
+        },
+        "name": {
+            "crypto_code": "T03",
+            "class_name": "NameTypeHandler",
+            "description": "이름",
+        },
+        "sex": {
+            "crypto_code": "T04",
+            "class_name": "SexTypeHandler",
+            "description": "성별",
+        },
     }
 
     # column_type별 crypto_code 매핑 (하위 호환성)
@@ -51,7 +67,7 @@ class TypeHandlerGenerator:
     }
 
     # 단순한 column_type별 TypeHandler 템플릿
-    TYPE_HANDLER_JAVA_TEMPLATE = '''package {package_name};
+    TYPE_HANDLER_JAVA_TEMPLATE = """package {package_name};
 
 import java.sql.CallableStatement;
 import java.sql.PreparedStatement;
@@ -121,7 +137,7 @@ public class {class_name} extends BaseTypeHandler<String> {{
         return CryptoService.decrypt(encryptedText, CRYPTO_CODE);
     }}
 }}
-'''
+"""
 
     XML_MODIFICATION_PROMPT_TEMPLATE = """
 ## Task
@@ -153,40 +169,38 @@ If no modifications are needed, return the original XML as-is with a comment at 
 
     def __init__(
         self,
-        config_manager: ConfigurationManager,
+        config: Configuration,
         llm_provider: Optional[LLMProvider] = None,
     ):
         """
         TypeHandlerGenerator 초기화
 
         Args:
-            config_manager: 설정 관리자
+            config: 설정 객체
             llm_provider: LLM 프로바이더 (선택적)
         """
-        self.config_manager = config_manager
-        self.project_root = Path(config_manager.get("target_project"))
+        self.config = config
+        self.project_root = Path(config.target_project)
 
         # LLM 프로바이더 초기화
         if llm_provider:
             self.llm_provider = llm_provider
         else:
-            llm_provider_name = config_manager.get("llm_provider", "watsonx_ai")
-            self.llm_provider = create_llm_provider(provider_name=llm_provider_name)
+            self.llm_provider = create_llm_provider(provider_name=config.llm_provider)
 
         # 컴포넌트 초기화
-        self.error_handler = ErrorHandler(
-            max_retries=config_manager.get("max_retries", 3)
-        )
+        self.error_handler = ErrorHandler(max_retries=config.max_retries)
         self.result_tracker = ResultTracker()
         self.persistence_manager = DataPersistenceManager(self.project_root)
 
         # Type Handler 기본 설정
-        self.type_handler_package = config_manager.get(
-            "type_handler_package", "com.example.typehandler"
-        )
-        self.type_handler_output_dir = config_manager.get(
-            "type_handler_output_dir", "src/main/java"
-        )
+        type_handler_config = config.type_handler
+        if type_handler_config:
+            self.type_handler_package = type_handler_config.package
+            self.type_handler_output_dir = type_handler_config.output_dir
+        else:
+            self.type_handler_package = "com.example.typehandler"
+            self.type_handler_output_dir = "src/main/java"
 
         logger.info(
             f"TypeHandlerGenerator 초기화 완료: {self.llm_provider.get_provider_name()}"
@@ -282,7 +296,9 @@ If no modifications are needed, return the original XML as-is with a comment at 
                 for result in xml_results:
                     if result["status"] == "success":
                         total_xml_modified += 1
-                        print(f"      ✓ XML 수정 완료: {Path(result['file_path']).name}")
+                        print(
+                            f"      ✓ XML 수정 완료: {Path(result['file_path']).name}"
+                        )
                     elif result["status"] == "skipped":
                         print(
                             f"      - XML 수정 건너뜀: {Path(result['file_path']).name}"
@@ -320,7 +336,7 @@ If no modifications are needed, return the original XML as-is with a comment at 
         for table_info in table_access_info_list:
             for col in table_info.columns:
                 print(col)
-                print("="*30)
+                print("=" * 30)
                 if isinstance(col, dict):
                     column_type = col.get("column_type", "")
                     if column_type and column_type in self.COLUMN_TYPE_CONFIG:
@@ -446,7 +462,7 @@ If no modifications are needed, return the original XML as-is with a comment at 
         """config_manager에서 column_type 정보를 가져와 TableAccessInfo에 병합"""
         # config에서 해당 테이블의 컬럼 정보 가져오기
         config_columns = {}
-        for table in self.config_manager.get("access_tables"):
+        for table in self.config.access_tables:
             if table.table_name.lower() == table_info.table_name.lower():
                 for col in table.columns:
                     if not isinstance(col, str):
@@ -720,7 +736,6 @@ If no modifications are needed, return the original XML as-is with a comment at 
                 "error": str(e),
             }
 
-
     def _format_columns_info_with_handler(
         self, columns: List[Any], type_handler_mapping: Dict[str, str]
     ) -> str:
@@ -733,7 +748,7 @@ If no modifications are needed, return the original XML as-is with a comment at 
 
                 if column_type and column_type in type_handler_mapping:
                     handler_class = type_handler_mapping[column_type]
-                    lines.append(f"  - {col_name} -> typeHandler=\"{handler_class}\"")
+                    lines.append(f'  - {col_name} -> typeHandler="{handler_class}"')
                 else:
                     lines.append(f"  - {col_name} (no TypeHandler)")
             else:

@@ -260,8 +260,6 @@ def test_get_version_info(persistence_manager, sample_source_file):
     assert version_info["file_size"] > 0
 
 
-
-
 def test_subdirectory_save_and_load(persistence_manager, sample_source_file):
     """하위 디렉터리에 파일 저장 및 로드 확인"""
     source_files = [sample_source_file]

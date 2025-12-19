@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from config.config_manager import ConfigurationManager
+from config.config_manager import Configuration
 from models.modification_context import CodeSnippet, ModificationContext
 from models.modification_plan import ModificationPlan
 from models.table_access_info import TableAccessInfo
@@ -36,7 +36,7 @@ class CodeModifier:
 
     def __init__(
         self,
-        config_manager: ConfigurationManager,
+        config: Configuration,
         llm_provider: Optional[LLMProvider] = None,
         project_root: Optional[Path] = None,
     ):
@@ -44,31 +44,29 @@ class CodeModifier:
         CodeModifier 초기화
 
         Args:
-            config_manager: 설정 관리자
+            config: 설정 객체
             llm_provider: LLM 프로바이더 (선택적, 설정에서 자동 생성)
             project_root: 프로젝트 루트 디렉토리 (선택적)
         """
-        self.config_manager = config_manager
+        self.config = config
         self.project_root = (
-            Path(project_root) if project_root else Path(config_manager.get("target_project"))
+            Path(project_root) if project_root else Path(config.target_project)
         )
 
         # LLM 프로바이더 초기화
         if llm_provider:
             self.llm_provider = llm_provider
         else:
-            llm_provider_name = config_manager.get("llm_provider", "watsonx_ai")
+            llm_provider_name = config.llm_provider
             self.llm_provider = create_llm_provider(provider_name=llm_provider_name)
 
         self.diff_generator = self._get_diff_generator()
 
         self.batch_processor = BatchProcessor(
-            max_workers=config_manager.get("max_workers", 4),
+            max_workers=config.max_workers,
         )
         self.code_patcher = CodePatcher(project_root=self.project_root)
-        self.error_handler = ErrorHandler(
-            max_retries=config_manager.get("max_retries", 3)
-        )
+        self.error_handler = ErrorHandler(max_retries=config.max_retries)
         self.result_tracker = ResultTracker()
 
         logger.info(
@@ -101,8 +99,7 @@ class CodeModifier:
         Returns:
             BaseDiffGenerator: DiffGenerator 인스턴스
         """
-        # 설정에서 diff_type 가져오기 (기본값: mybatis_service)
-        diff_type = self.config_manager.get("diff_type", "mybatis_service")
+        diff_type = self.config.diff_gen_type
 
         try:
             # 동적 임포트 경로 생성
@@ -547,7 +544,7 @@ class CodeModifier:
 
         # 기본 정보 준비 (반복문 밖에서 한 번만 처리)
         formatted_table_info = self._format_table_info(table_access_info)
-        max_tokens = self.config_manager.get("max_tokens_per_batch", 2000)
+        max_tokens = self.config.max_tokens_per_batch
 
         input_empty_data = DiffGeneratorInput(
             code_snippets=[], table_info=formatted_table_info, layer_name=layer
