@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 import tiktoken
 from jinja2 import Template
 
+from config.config_manager import Configuration
 from models.diff_generator import DiffGeneratorInput, DiffGeneratorOutput
 from modifier.llm.llm_provider import LLMProvider
 
@@ -37,6 +38,7 @@ class BaseDiffGenerator:
         llm_provider: LLMProvider,
         prompt_cache: Dict[str, Dict[str, Any]] = None,
         template_path: Optional[Path] = None,
+        config: Optional[Configuration] = None,
     ):
         """
         BaseDiffGenerator 초기화
@@ -45,9 +47,11 @@ class BaseDiffGenerator:
             llm_provider: LLM 프로바이더
             prompt_cache: 프롬프트 캐시 저장소 (선택적)
             template_path: 템플릿 파일 경로
+            config: 설정 객체 (선택적)
         """
         self.llm_provider = llm_provider
         self._prompt_cache = prompt_cache if prompt_cache is not None else {}
+        self.config = config
 
         if template_path:
             self.template_path = Path(template_path)
@@ -55,9 +59,17 @@ class BaseDiffGenerator:
             # 클래스가 정의된 모듈의 경로를 찾음 (상속 시 해당 클래스 위치 기준)
             module = sys.modules[self.__class__.__module__]
             if hasattr(module, "__file__") and module.__file__:
-                self.template_path = Path(module.__file__).parent / "template.md"
+                template_dir = Path(module.__file__).parent
             else:
-                self.template_path = Path(__file__).parent / "template.md"
+                template_dir = Path(__file__).parent
+
+            # generate_full_source 설정에 따라 템플릿 파일 선택
+            if config and config.generate_full_source:
+                template_filename = "template_full.md"
+            else:
+                template_filename = "template.md"
+
+            self.template_path = template_dir / template_filename
 
         if not self.template_path.exists():
             raise FileNotFoundError(f"Template not found at: {self.template_path}")

@@ -70,6 +70,7 @@ class ResultTracker:
         diff: Optional[str] = None,
         error: Optional[str] = None,
         tokens_used: int = 0,
+        reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         파일 수정 정보를 기록합니다.
@@ -82,6 +83,7 @@ class ResultTracker:
             diff: 수정 전후 차이 (Unified Format, 선택적)
             error: 에러 메시지 (선택적)
             tokens_used: 사용된 토큰 수
+            reason: 수정/스킵 이유 (선택적, error와 별개로 기록)
 
         Returns:
             Dict[str, Any]: 기록된 수정 정보
@@ -100,6 +102,9 @@ class ResultTracker:
 
         if error:
             modification_info["error"] = error
+
+        if reason:
+            modification_info["reason"] = reason
 
         # 통계 업데이트
         self.stats["total_files"] += 1

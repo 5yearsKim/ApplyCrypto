@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from config.config_manager import Configuration
 from models.diff_generator import DiffGeneratorOutput
 
 logger = logging.getLogger("applycrypto.code_patcher")
@@ -30,14 +31,18 @@ class CodePatcher:
     Unified Diff 형식의 패치를 파싱하고 파일에 적용합니다.
     """
 
-    def __init__(self, project_root: Optional[Path] = None):
+    def __init__(
+        self, project_root: Optional[Path] = None, config: Optional[Configuration] = None
+    ):
         """
         CodePatcher 초기화
 
         Args:
             project_root: 프로젝트 루트 디렉토리 (선택적)
+            config: 설정 객체 (선택적)
         """
         self.project_root = Path(project_root) if project_root else Path.cwd()
+        self.config = config
 
     def parse_llm_response(
         self, response: Union[Dict[str, Any], DiffGeneratorOutput]
@@ -146,7 +151,7 @@ class CodePatcher:
 
         Args:
             file_path: 수정할 파일 경로
-            unified_diff: Unified Diff 형식의 수정 내용
+            unified_diff: Unified Diff 형식의 수정 내용 (또는 generate_full_source가 True일 때 전체 소스 코드)
             dry_run: 실제 수정 없이 시뮬레이션만 수행 (기본값: False)
 
         Returns:
@@ -173,37 +178,50 @@ class CodePatcher:
                 logger.info(f"[DRY RUN] 파일 수정 시뮬레이션: {file_path}")
                 return True, None
 
-            # subprocess로 patch 명령을 수행하는 대신 apply_patch_using_difflib 사용
-            # # 임시 파일에 diff 저장
-            # with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as diff_file:
-            #     diff_file.write(unified_diff)
-            #     diff_file_path = diff_file.name
-            #
-            # try:
-            #     # patch 명령 실행
-            #     result = subprocess.run(
-            #         ["patch", "-p0", str(file_path), diff_file_path],
-            #         capture_output=True,
-            #         text=True,
-            #         cwd=self.project_root
-            #     )
-            #
-            #     if result.returncode != 0:
-            #         error_msg = f"patch 명령 실행 실패: {result.stderr}"
-            #         logger.error(error_msg)
-            #         return False, error_msg
-            #
-            #     logger.info(f"파일 수정 완료: {file_path}")
-            #     return True, None
-            #
-            # finally:
-            #     # 임시 파일 삭제
-            #     Path(diff_file_path).unlink()
-
-            # apply_patch_using_difflib 사용
-            return self.apply_patch_using_difflib(
-                file_path=file_path, unified_diff=unified_diff, dry_run=dry_run
+            # generate_full_source 설정 확인
+            generate_full_source = (
+                self.config.generate_full_source if self.config else False
             )
+
+            if generate_full_source:
+                # 전체 소스 코드를 파일에 덮어쓰기
+                return self.apply_full_source(
+                    file_path=file_path, full_source=unified_diff, dry_run=dry_run
+                )
+            else:
+                # subprocess로 patch 명령을 수행하는 대신 apply_patch_using_difflib 사용
+                # # 임시 파일에 diff 저장
+                # with tempfile.NamedTemporaryFile(mode='w', suffix='.diff', delete=False) as diff_file:
+                #     diff_file.write(unified_diff)
+                #     diff_file_path = diff_file.name
+                #
+                # try:
+                #     # patch 명령 실행
+                #     result = subprocess.run(
+                #         ["patch", "-p0", str(file_path), diff_file_path],
+                #         capture_output=True,
+                #         text=True,
+                #         cwd=self.project_root
+                #     )
+                #
+                #     if result.returncode != 0:
+                #         error_msg = f"patch 명령 실행 실패: {result.stderr}"
+                #         logger.error(error_msg)
+                #         return False, error_msg
+                #
+                #     logger.info(f"파일 수정 완료: {file_path}")
+                #     return True, None
+                #
+                # finally:
+                #     # 임시 파일 삭제
+                #     Path(diff_file_path).unlink()
+
+                # apply_patch_using_difflib 사용
+                
+                # 기존대로 unified diff 패치 적용
+                return self.apply_patch_using_difflib(
+                    file_path=file_path, unified_diff=unified_diff, dry_run=dry_run
+                )
 
         except Exception as e:
             error_msg = f"패치 적용 실패: {e}"
@@ -423,3 +441,49 @@ class CodePatcher:
         except Exception as e:
             logger.warning(f"구문 검사 중 오류 발생: {e}")
             return True, None  # 오류가 있어도 계속 진행
+
+    def apply_full_source(
+        self, file_path: Path, full_source: str, dry_run: bool = False
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        전체 소스 코드를 파일에 덮어씁니다.
+
+        Args:
+            file_path: 수정할 파일 경로
+            full_source: 전체 소스 코드 내용
+            dry_run: 실제 수정 없이 시뮬레이션만 수행 (기본값: False)
+
+        Returns:
+            Tuple[bool, Optional[str]]: (성공 여부, 에러 메시지)
+        """
+        try:
+            # LLM 응답에서 받은 절대 경로를 그대로 사용
+            if not file_path.is_absolute():
+                logger.warning(
+                    f"상대 경로가 전달되었습니다: {file_path}. 절대 경로로 변환합니다."
+                )
+                file_path = self.project_root / file_path
+
+            # 절대 경로로 정규화
+            file_path = file_path.resolve()
+
+            if not file_path.exists():
+                error_msg = f"파일이 존재하지 않습니다: {file_path}"
+                logger.error(error_msg)
+                return False, error_msg
+
+            if dry_run:
+                logger.info(f"[DRY RUN] 전체 소스 코드 덮어쓰기 시뮬레이션: {file_path}")
+                return True, None
+
+            # 전체 소스 코드를 파일에 쓰기
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(full_source)
+
+            logger.info(f"전체 소스 코드 덮어쓰기 완료: {file_path}")
+            return True, None
+
+        except Exception as e:
+            error_msg = f"전체 소스 코드 덮어쓰기 실패: {e}"
+            logger.error(error_msg)
+            return False, error_msg

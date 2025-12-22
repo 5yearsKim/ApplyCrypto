@@ -74,7 +74,7 @@ class CodeModifier:
         self.batch_processor = BatchProcessor(
             max_workers=config.max_workers,
         )
-        self.code_patcher = CodePatcher(project_root=self.project_root)
+        self.code_patcher = CodePatcher(project_root=self.project_root, config=self.config)
         self.error_handler = ErrorHandler(max_retries=config.max_retries)
         self.result_tracker = ResultTracker()
 
@@ -125,7 +125,7 @@ class CodeModifier:
                     and obj is not BaseDiffGenerator
                     and obj.__module__ == module.__name__
                 ):
-                    return obj(llm_provider=self.llm_provider)
+                    return obj(llm_provider=self.llm_provider, config=self.config)
 
             raise ValueError(f"No suitable DiffGenerator class found in {module_path}")
 
@@ -281,6 +281,7 @@ class CodeModifier:
                 diff=unified_diff,
                 error=error_msg,
                 tokens_used=tokens_used,
+                reason=reason,
             )
 
         if not unified_diff:
@@ -291,8 +292,9 @@ class CodeModifier:
                 modification_type=modification_type,
                 status="skipped",
                 diff=None,
-                error=reason if reason else "No diff generated",
+                error="No diff generated",
                 tokens_used=tokens_used,
+                reason=reason,
             )
 
         try:
@@ -326,6 +328,7 @@ class CodeModifier:
                 diff=unified_diff if status == "success" else None,
                 error=error_msg,
                 tokens_used=tokens_used,
+                reason=reason,
             )
 
         except Exception as e:
@@ -337,6 +340,7 @@ class CodeModifier:
                 status="failed",
                 error=str(e),
                 tokens_used=tokens_used,
+                reason=reason,
             )
 
     def _generate_batch_plans(
