@@ -17,6 +17,8 @@ from models.call_relation import CallRelation
 from models.method import LocalVariable, Method, Parameter
 from persistence.cache_manager import CacheManager
 
+from .java_utils import JavaUtils
+
 # Java 언어 설정
 JAVA_LANGUAGE = Language(tsjava.language())
 
@@ -166,6 +168,9 @@ class JavaASTParser:
                     None,
                     f"파일을 읽을 수 없습니다: 지원되는 인코딩을 찾을 수 없습니다 (시도한 인코딩: {', '.join(encodings)})",
                 )
+
+            # 주석 제거
+            source_code = JavaUtils.remove_java_comments(source_code)
 
             # 파싱
             tree = self.parser.parse(bytes(source_code, "utf8"))

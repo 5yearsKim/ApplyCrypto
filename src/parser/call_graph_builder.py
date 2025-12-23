@@ -21,6 +21,7 @@ from models.method import Method
 from persistence.cache_manager import CacheManager
 
 from .java_ast_parser import ClassInfo, JavaASTParser
+from .java_utils import JavaUtils
 
 
 @dataclass
@@ -614,7 +615,7 @@ class CallGraphBuilder:
         self, file_path: str, target_name: str, is_class: bool = True
     ) -> Dict[str, str]:
         """
-        파일에서 어노테이션 전체 텍스트 추출
+        파일에서 어노테이션 전체 텍스트 추출 (주석 제외)
 
         Args:
             file_path: 파일 경로
@@ -636,14 +637,17 @@ class CallGraphBuilder:
             except Exception:
                 return annotation_map
 
+        # 주석 제거
+        source_code_no_comments = JavaUtils.remove_java_comments(source_code)
+
         if is_class:
             # 클래스 어노테이션 추출
             # class ClassName 또는 public class ClassName 앞의 어노테이션들 찾기
             pattern = rf"(?:@\w+(?:\([^)]*\))?\s*)+class\s+{re.escape(target_name)}\b"
-            match = re.search(pattern, source_code, re.MULTILINE | re.DOTALL)
+            match = re.search(pattern, source_code_no_comments, re.MULTILINE | re.DOTALL)
             if match:
                 # 매칭된 부분에서 어노테이션 추출
-                matched_text = source_code[: match.end()]
+                matched_text = source_code_no_comments[: match.end()]
                 # class 키워드 이전 부분
                 before_class = matched_text[: matched_text.rfind("class")]
                 # 어노테이션 패턴 찾기
@@ -656,17 +660,20 @@ class CallGraphBuilder:
             # 메서드 어노테이션 추출
             # 메서드 시그니처 앞의 어노테이션들 찾기
             # @GetMapping(...) public ReturnType methodName(...) 패턴
-            pattern = rf"(?:@\w+(?:\([^)]*\))?\s*)+(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:final\s+)?\w+\s+{re.escape(target_name)}\s*\("
-            match = re.search(pattern, source_code, re.MULTILINE | re.DOTALL)
+            # 리턴 타입은 제네릭 타입(Collection<Employee>), 배열, 여러 단어 등을 포함할 수 있음
+            # 메서드명 바로 앞의 리턴 타입 부분을 더 유연하게 처리
+            pattern = rf"(?:@\w+(?:\([^()]*\))?\s*)+(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:final\s+)?(?:[\w<>\[\],\s\.]+)?\s+{re.escape(target_name)}\s*\("
+            match = re.search(pattern, source_code_no_comments, re.MULTILINE | re.DOTALL)
             if match:
                 # 매칭된 부분에서 어노테이션 추출
-                matched_text = source_code[: match.end()]
+                matched_text = source_code_no_comments[: match.end()]
                 # 메서드명 이전 부분
                 method_name_pos = matched_text.rfind(target_name)
                 before_method = matched_text[:method_name_pos]
-                # 어노테이션 패턴 찾기
-                annotation_pattern = r"@(\w+)(\([^)]*\))?"
-                for ann_match in re.finditer(annotation_pattern, before_method):
+                # 어노테이션 패턴 찾기 (중첩 괄호 처리 개선)
+                # 어노테이션은 여러 줄에 걸쳐 있을 수 있으므로 DOTALL 모드 사용
+                annotation_pattern = r"@(\w+)(\((?:[^()]|\([^()]*\))*\))?"
+                for ann_match in re.finditer(annotation_pattern, before_method, re.DOTALL):
                     ann_name = ann_match.group(1)
                     ann_full = ann_match.group(0)
                     annotation_map[ann_name] = ann_full
@@ -702,6 +709,7 @@ class CallGraphBuilder:
                     break
 
             # 메서드 레벨 엔드포인트 식별
+            
             for method in cls.methods:
                 endpoint = self._extract_endpoint(cls, method, class_path)
                 if endpoint:
@@ -875,6 +883,90 @@ class CallGraphBuilder:
             dfs(start_node, 0)
 
         return chains
+
+    def restore_from_call_trees(
+        self,
+        call_trees: List[Dict[str, Any]],
+        endpoints: List[Endpoint],
+        method_metadata: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> None:
+        """
+        저장된 call_trees 데이터로부터 call_graph를 복원합니다.
+
+        Args:
+            call_trees: 저장된 call tree 리스트
+            endpoints: 엔드포인트 리스트
+            method_metadata: 메서드 메타데이터 (선택적, call_trees에서 추출 가능)
+        """
+        if nx is None:
+            raise ImportError("networkx가 설치되어 있지 않습니다.")
+
+        # 그래프 초기화
+        self.call_graph = nx.DiGraph()
+        self.endpoints = endpoints
+        self.method_metadata = method_metadata or {}
+
+        def extract_edges_from_tree(node: Dict[str, Any], parent: Optional[str] = None):
+            """
+            재귀적으로 트리에서 edges를 추출하는 내부 함수
+
+            Args:
+                node: 현재 노드
+                parent: 부모 노드의 method_signature
+            """
+            method_sig = node.get("method_signature")
+            if not method_sig:
+                return
+
+            # 노드 추가
+            self.call_graph.add_node(method_sig)
+
+            # 메타데이터 업데이트 (call_trees에 있는 정보 사용)
+            if method_sig not in self.method_metadata:
+                self.method_metadata[method_sig] = {}
+            if "class_name" in node:
+                self.method_metadata[method_sig]["class_name"] = node["class_name"]
+            if "file_path" in node:
+                self.method_metadata[method_sig]["file_path"] = node["file_path"]
+            if "layer" in node:
+                self.method_metadata[method_sig]["layer"] = node["layer"]
+
+            # 부모에서 현재 노드로 edge 추가
+            if parent:
+                self.call_graph.add_edge(parent, method_sig)
+
+            # 자식 노드 처리
+            children = node.get("children", [])
+            for child in children:
+                extract_edges_from_tree(child, method_sig)
+
+        # 각 call_tree에서 edges 추출
+        for tree in call_trees:
+            # endpoint 정보가 있으면 사용
+            endpoint_info = tree.get("endpoint", {})
+            if endpoint_info:
+                method_sig = endpoint_info.get("method_signature")
+                if method_sig:
+                    self.call_graph.add_node(method_sig)
+                    if method_sig not in self.method_metadata:
+                        self.method_metadata[method_sig] = {}
+                    if "class_name" in endpoint_info:
+                        self.method_metadata[method_sig]["class_name"] = endpoint_info[
+                            "class_name"
+                        ]
+                    if "file_path" in endpoint_info:
+                        self.method_metadata[method_sig]["file_path"] = endpoint_info[
+                            "file_path"
+                        ]
+
+            # 트리 구조에서 edges 추출
+            if "method_signature" in tree:
+                extract_edges_from_tree(tree)
+
+        self.logger.info(
+            f"Call Graph 복원 완료: {self.call_graph.number_of_nodes()}개 노드, "
+            f"{self.call_graph.number_of_edges()}개 엣지"
+        )
 
     def _get_layer(self, method_signature: str) -> str:
         """

@@ -9,7 +9,7 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 try:
     from tabulate import tabulate
@@ -131,8 +131,8 @@ class CLIController:
         list_parser.add_argument(
             "--callgraph",
             type=str,
-            metavar="ENDPOINT",
-            help="특정 엔드포인트의 호출 그래프를 출력합니다",
+            metavar="ENDPOINT_OR_METHOD",
+            help="특정 엔드포인트 또는 메서드의 호출 그래프를 출력합니다",
         )
 
         # modify 명령어 서브파서
@@ -827,39 +827,49 @@ class CLIController:
                     target_endpoint_obj = ep
                     break
 
-            if not target_endpoint_obj:
-                print(f"엔드포인트 '{endpoint}'를 찾을 수 없습니다.")
-                print("\n사용 가능한 엔드포인트 (method_signature 형식):")
-                for ep in endpoint_objects[:10]:  # 처음 10개 표시
-                    print(f"  - {ep.method_signature}")
-                if len(endpoint_objects) > 10:
-                    print(f"  ... 외 {len(endpoint_objects) - 10}개")
-                print("\n사용법: list --callgraph <method_signature>")
-                print("예시: list --callgraph EmpController.login")
-                print("     list --callgraph login  (부분 매칭도 가능)")
+            # Call Graph 복원 (저장된 call_trees 사용)
+            call_graph_builder = CallGraphBuilder()
+            
+            # call_trees에서 call_graph 복원
+            call_trees = call_graph_data.get("call_trees", [])
+            if call_trees:
+                try:
+                    endpoints = call_graph_data["endpoints"]
+                    # call_graph 복원
+                    call_graph_builder.restore_from_call_trees(
+                        call_trees=call_trees,
+                        endpoints=endpoint_objects
+                    )
+                    self.logger.info("Call Graph 복원 완료 (저장된 call_trees 사용)")
+                except Exception as e:
+                    self.logger.warning(f"Call Graph 복원 실패: {e}")
+                    # 복원 실패 시 기존 방식으로 재생성 (fallback)
+                    self.logger.info("Call Graph 재생성 시도 (fallback)...")
+                    try:
+                        cache_manager = persistence_manager.cache_manager or CacheManager()
+                        java_parser = JavaASTParser(cache_manager=cache_manager)
+                        call_graph_builder = CallGraphBuilder(
+                            java_parser=java_parser, cache_manager=cache_manager
+                        )
+                        source_files_data = persistence_manager.load_from_file(
+                            "source_files.json", SourceFile
+                        )
+                        source_files = [
+                            SourceFile.from_dict(f) if isinstance(f, dict) else f
+                            for f in source_files_data
+                        ]
+                        java_files = [f.path for f in source_files if f.extension == ".java"]
+                        call_graph_builder.build_call_graph(java_files)
+                    except Exception as e2:
+                        self.logger.error(f"Call Graph 재생성도 실패: {e2}")
+                        print(f"오류: Call Graph를 복원하거나 재생성할 수 없습니다: {e2}")
+                        return
+            else:
+                self.logger.warning("call_trees가 없어 Call Graph를 복원할 수 없습니다.")
+                print("오류: Call Graph 데이터에 call_trees가 없습니다.")
                 return
 
-            cache_manager = persistence_manager.cache_manager or CacheManager()
-            java_parser = JavaASTParser(cache_manager=cache_manager)
-            call_graph_builder = CallGraphBuilder(
-                java_parser=java_parser, cache_manager=cache_manager
-            )
-
-            # Call Graph 재생성 (캐시에서 로드)
-            try:
-                source_files_data = persistence_manager.load_from_file(
-                    "source_files.json", SourceFile
-                )
-                source_files = [
-                    SourceFile.from_dict(f) if isinstance(f, dict) else f
-                    for f in source_files_data
-                ]
-                java_files = [f for f in source_files if f.extension == ".java"]
-                call_graph_builder.build_call_graph(java_files)
-            except Exception as e:
-                self.logger.warning(f"Call Graph 재생성 실패: {e}")
-
-            # 호출 트리 출력
+            # 엔드포인트를 찾은 경우
             if target_endpoint_obj:
                 print(
                     f"\n엔드포인트 '{target_endpoint_obj.method_signature}'의 호출 그래프:"
@@ -867,14 +877,124 @@ class CLIController:
                 print("=" * 60)
                 # print_call_tree는 Endpoint 객체를 받음
                 call_graph_builder.print_call_tree(
-                    target_endpoint_obj, show_layers=True, max_depth=10
+                    target_endpoint_obj, show_layers=True, max_depth=100
                 )
+            else:
+                # 엔드포인트를 찾지 못한 경우, method로 판단하여 모든 call tree에서 검색
+                print(f"엔드포인트 '{endpoint}'를 찾을 수 없습니다. 메서드로 검색합니다...")
+                
+                # call_trees에서 해당 method_signature를 포함하는 모든 tree 찾기
+                matching_trees = []
+                
+                def find_method_in_tree(node: Dict[str, Any], target_method: str) -> bool:
+                    """재귀적으로 트리에서 method_signature를 찾는 함수"""
+                    method_sig = node.get("method_signature", "")
+                    if target_method in method_sig or method_sig.endswith(f".{target_method}"):
+                        return True
+                    
+                    for child in node.get("children", []):
+                        if find_method_in_tree(child, target_method):
+                            return True
+                    
+                    return False
+                
+                # 모든 call_tree에서 검색
+                for tree in call_trees:
+                    # endpoint 정보 확인
+                    endpoint_info = tree.get("endpoint", {})
+                    endpoint_method = endpoint_info.get("method_signature", "")
+                    
+                    # endpoint method_signature와 일치하는지 확인
+                    if (
+                        endpoint in endpoint_method
+                        or endpoint_method.endswith(f".{endpoint}")
+                        or endpoint_method == endpoint
+                    ):
+                        matching_trees.append(tree)
+                        continue
+                    
+                    # 트리 내부에서 method_signature 검색
+                    if "method_signature" in tree:
+                        if find_method_in_tree(tree, endpoint):
+                            matching_trees.append(tree)
+                
+                if matching_trees:
+                    print(f"\n메서드 '{endpoint}'가 사용되는 {len(matching_trees)}개의 호출 그래프를 찾았습니다:")
+                    print("=" * 60)
+                    
+                    for idx, tree in enumerate(matching_trees, 1):
+                        endpoint_info = tree.get("endpoint", {})
+                        endpoint_method = endpoint_info.get("method_signature", "")
+                        endpoint_path = endpoint_info.get("path", "")
+                        endpoint_http = endpoint_info.get("http_method", "")
+                        
+                        print(f"\n[{idx}/{len(matching_trees)}] 엔드포인트: {endpoint_http} {endpoint_path}")
+                        print(f"Method: {endpoint_method}")
+                        print("-" * 60)
+                        
+                        # 트리를 출력하기 위해 해당 endpoint로 call_graph에서 출력
+                        if endpoint_method:
+                            # endpoint 객체 찾기
+                            ep_obj = next(
+                                (ep for ep in endpoint_objects if ep.method_signature == endpoint_method),
+                                None
+                            )
+                            if ep_obj:
+                                call_graph_builder.print_call_tree(
+                                    ep_obj, show_layers=True, max_depth=100
+                                )
+                            else:
+                                # endpoint 객체가 없으면 트리 구조를 직접 출력
+                                self._print_tree_structure(tree, target_method=endpoint, indent=0)
+                else:
+                    print(f"메서드 '{endpoint}'를 사용하는 호출 그래프를 찾을 수 없습니다.")
+                    print("\n사용 가능한 엔드포인트 (method_signature 형식):")
+                    for ep in endpoint_objects[:10]:  # 처음 10개 표시
+                        print(f"  - {ep.method_signature}")
+                    if len(endpoint_objects) > 10:
+                        print(f"  ... 외 {len(endpoint_objects) - 10}개")
+                    print("\n사용법: list --callgraph <endpoint_or_method>")
+                    print("예시: list --callgraph EmpController.login  (엔드포인트)")
+                    print("     list --callgraph getEmpsByPage  (메서드, 부분 매칭 가능)")
 
         except PersistenceError as e:
             print(f"오류: {e}", file=sys.stderr)
         except Exception as e:
             self.logger.exception(f"호출 그래프 조회 중 오류: {e}")
             print(f"오류: {e}", file=sys.stderr)
+
+    def _print_tree_structure(
+        self, tree: Dict[str, Any], target_method: str, indent: int = 0, is_last: bool = True
+    ) -> None:
+        """
+        트리 구조를 재귀적으로 출력합니다.
+
+        Args:
+            tree: 트리 노드 딕셔너리
+            target_method: 검색 대상 메서드명 (하이라이트용)
+            indent: 들여쓰기 레벨
+            is_last: 마지막 자식 노드 여부
+        """
+        method_sig = tree.get("method_signature", "")
+        layer = tree.get("layer", "Unknown")
+        is_circular = tree.get("is_circular", False)
+        
+        if method_sig:
+            prefix = "   " * indent if indent > 0 else ""
+            marker = "└─ " if is_last else "├─ "
+            circular_marker = " (recursive/circular)" if is_circular else ""
+            highlight = " >>> " if target_method in method_sig else ""
+            
+            print(f"{prefix}{marker}{method_sig} [{layer}]{highlight}{circular_marker}")
+        
+        # 자식 노드 출력
+        children = tree.get("children", [])
+        for i, child in enumerate(children):
+            is_last_child = i == len(children) - 1
+            extension = "   " if is_last else "│  "
+            new_prefix = prefix + extension if indent > 0 else ""
+            
+            self._print_tree_structure(child, target_method, indent + 1, is_last_child)
 
     def _print_diff(self, file_path: str, diff: str):
         """Diff 내용을 컬러로 출력 (간단 구현)"""
