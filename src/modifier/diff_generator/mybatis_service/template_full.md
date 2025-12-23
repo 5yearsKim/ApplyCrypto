@@ -66,6 +66,20 @@ You have to modify source codes depending on each thpe of the information :
 -- That could be done mainly with calling getters of DTO/DAO instances in the service layer. You have to decide the best way to do it by investigating existing codes.
 - Example: `String date = dto.getDob()` → `String date = k_sign.CryptoService.decrypt(dto.getDob(), P30, K_SIGN_DOB)`
 
+** Special Method Parameter Rules :**
+- **Trigger**: Method name contains `get` or `select` AND input parameter is `custnm`(CUST_NM) or `acnmNo`(ACNM_NO).
+- **Action**: Apply encryption code `ksignService.encrypt()`.
+- **Example**: `reqData.add("CUST_NM", ksignService.encrypt(KsignConstants.NAME, custNm));`
+
+** Special History Data Rules :**
+- **Trigger**: Parameter value/name is `hst` or `history`.
+- **Action**: Apply encryption logic.
+- **Example**: `ksignService.encrypt(KsignConstants.NAME, custNm);`
+
+** Integration Point Exclusions :**
+- **Trigger**: Code related to "Alim" (Notification) or "SMS".
+- **Action**: Do NOT apply encryption/decryption. Treat as integration points which are excluded.
+
 ### 4. Layer-Specific Modification Strategy
 
 **Priority: Service Layer**
@@ -208,3 +222,4 @@ From here, there are actual information and source codes that you have to handle
 1. Do not change the logic of existing code.
 2. Only add encryption and decryption code.
 3. The file_path must use the absolute path provided in source_files.
+4. Do NOT perform any linting or formatting changes such as removing comments, trimming whitespace, or reformatting code. Only modify what is strictly necessary for encryption/decryption.
