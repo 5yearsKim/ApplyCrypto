@@ -38,7 +38,6 @@ class CodeModifier:
         self,
         config: Configuration,
         llm_provider: Optional[LLMProvider] = None,
-        project_root: Optional[Path] = None,
     ):
         """
         CodeModifier 초기화
@@ -46,12 +45,9 @@ class CodeModifier:
         Args:
             config: 설정 객체
             llm_provider: LLM 프로바이더 (선택적, 설정에서 자동 생성)
-            project_root: 프로젝트 루트 디렉토리 (선택적)
         """
         self.config = config
-        self.project_root = (
-            Path(project_root) if project_root else Path(config.target_project)
-        )
+        self.target_project = Path(config.target_project)
 
         # LLM 프로바이더 초기화
         if llm_provider:
@@ -75,7 +71,7 @@ class CodeModifier:
             max_workers=config.max_workers,
         )
         self.code_patcher = CodePatcher(
-            project_root=self.project_root, config=self.config
+            project_root=self.target_project, config=self.config
         )
         self.error_handler = ErrorHandler(max_retries=config.max_retries)
         self.result_tracker = ResultTracker()
@@ -371,7 +367,7 @@ class CodeModifier:
                     logger.warning(
                         f"LLM 응답에 상대 경로가 포함되었습니다: {file_path_str}. 절대 경로로 변환합니다."
                     )
-                    file_path = self.project_root / file_path
+                    file_path = self.target_project / file_path
 
                 # 절대 경로로 정규화
                 file_path = file_path.resolve()

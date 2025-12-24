@@ -1134,9 +1134,7 @@ class CLIController:
                 return 1
 
             # CodeModifier 초기화
-            code_modifier = CodeModifier(
-                config=config, project_root=Path(target_project)
-            )
+            code_modifier = CodeModifier(config=config)
 
             print("  [2/2] 수정 계획 생성 및 적용 중...")
 

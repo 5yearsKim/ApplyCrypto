@@ -87,7 +87,7 @@ def main():
     # Initialize CodeModifier to get the correct DiffGenerator
     try:
         # We pass project_root from config
-        modifier = CodeModifier(config=config, project_root=Path(config.target_project))
+        modifier = CodeModifier(config=config)
         diff_generator = modifier.diff_generator
         logger.info(f"Initialized DiffGenerator: {type(diff_generator).__name__}")
 
