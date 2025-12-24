@@ -86,7 +86,10 @@ class CLIController:
 
         # 서브파서 생성
         subparsers = parser.add_subparsers(
-            dest="command", help="사용 가능한 명령어", metavar="COMMAND"
+            dest="command",
+            title="명령어",
+            description="사용 가능한 명령어 목록:",
+            metavar="COMMAND",
         )
 
         # analyze 명령어 서브파서
