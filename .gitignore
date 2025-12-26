@@ -67,6 +67,7 @@ htmlcov/
 # Project specific
 *.backup
 config.json
+config_*.json
 
 .cache
 .ruff_cache
