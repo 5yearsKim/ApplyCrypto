@@ -9,7 +9,7 @@ import json
 import logging
 from pathlib import Path
 
-from config.config_manager import ConfigurationManager
+from config.config_manager import load_config
 from models.modification_plan import ModificationPlan
 from models.table_access_info import TableAccessInfo
 from modifier.code_modifier import CodeModifier
@@ -43,8 +43,10 @@ def main():
             print(f"오류: 설정 파일을 찾을 수 없습니다: {config_file}")
             return
 
-        # ConfigManager 초기화
-        config_manager = ConfigurationManager(str(config_file))
+        # Config 로드
+        config = load_config(str(config_file))
+        # 테스트를 위해 target_project를 임시 디렉터리로 변경
+        config.target_project = str(temp_dir)
 
         # 테스트용 소스 파일 생성
         target_file = temp_dir / "UserDAO.java"
@@ -91,9 +93,7 @@ public class UserDAO {
         mock_llm = MockLLMProvider(mock_response=mock_response_str)
 
         # 3. CodeModifier 초기화
-        modifier = CodeModifier(
-            config_manager=config_manager, llm_provider=mock_llm, project_root=temp_dir
-        )
+        modifier = CodeModifier(config=config, llm_provider=mock_llm)
 
         # 4. 입력 데이터(TableAccessInfo) 생성
         table_info = TableAccessInfo(

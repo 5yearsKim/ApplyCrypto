@@ -50,14 +50,10 @@ class DataPersistenceManager:
             enable_cache: 캐싱 활성화 여부
         """
         self.target_project = Path(target_project)
-        self.output_dir = self.target_project / ".applycrypto" / "results"
-        # # output_dir이 지정되지 않으면 현재 작업 디렉터리 아래에 생성
-        # if output_dir is None:
-        #     from pathlib import Path as PathLib
-        #     current_dir = PathLib.cwd()
-        #     self.output_dir = current_dir / ".applycrypto" / "results"
-        # else:
-        #     self.output_dir = Path(output_dir)
+        if output_dir is None:
+            self.output_dir = self.target_project / ".applycrypto" / "results"
+        else:
+            self.output_dir = Path(output_dir)
         self.logger = logging.getLogger(__name__)
 
         # 결과 디렉터리 생성
@@ -177,6 +173,45 @@ class DataPersistenceManager:
             raise PersistenceError(f"파일 저장 실패: {file_path} - {e}")
         except PersistenceError:
             raise
+        except Exception as e:
+            raise PersistenceError(f"파일 저장 중 예상치 못한 오류: {e}")
+
+    def save_text_file(
+        self, content: str, filename: str, subdirectory: Optional[str] = None
+    ) -> Path:
+        """
+        문자열 데이터를 텍스트 파일로 저장
+
+        Args:
+            content: 저장할 문자열
+            filename: 파일명 (확장자 포함)
+            subdirectory: 하위 디렉터리 (선택적)
+
+        Returns:
+            Path: 저장된 파일 경로
+
+        Raises:
+            PersistenceError: 파일 저장 실패 시
+        """
+        try:
+            # 저장 디렉터리 결정
+            save_dir = self.output_dir
+            if subdirectory:
+                save_dir = self.output_dir / subdirectory
+                save_dir.mkdir(parents=True, exist_ok=True)
+
+            # 파일 경로
+            file_path = save_dir / filename
+
+            # 파일 저장
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            self.logger.info(f"텍스트 파일 저장 완료: {file_path}")
+            return file_path
+
+        except (OSError, PermissionError) as e:
+            raise PersistenceError(f"파일 저장 실패: {file_path} - {e}")
         except Exception as e:
             raise PersistenceError(f"파일 저장 중 예상치 못한 오류: {e}")
 
@@ -384,3 +419,37 @@ class DataPersistenceManager:
         """
         if self.cache_manager:
             self.cache_manager.set_cached_result(file_path, data)
+
+    def clear_all(self, use_backup: bool = False) -> None:
+        """
+        저장된 모든 데이터 삭제
+
+        Args:
+            use_backup: 삭제 전 백업 생성 여부
+        """
+        import shutil
+
+        if not self.output_dir.exists():
+            return
+
+        if use_backup:
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                # output_dir와 동일한 레벨에 백업 생성
+                backup_dir = self.output_dir.with_name(
+                    f"{self.output_dir.name}_backup_{timestamp}"
+                )
+                if backup_dir.exists():
+                    shutil.rmtree(backup_dir)
+
+                shutil.copytree(self.output_dir, backup_dir)
+                self.logger.info(f"데이터 백업 완료: {backup_dir}")
+            except Exception as e:
+                raise PersistenceError(f"백업 생성 실패: {e}")
+
+        try:
+            shutil.rmtree(self.output_dir)
+            self._ensure_output_directory()
+            self.logger.info("모든 데이터 삭제 완료")
+        except Exception as e:
+            raise PersistenceError(f"데이터 삭제 실패: {e}")

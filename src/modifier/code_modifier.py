@@ -4,8 +4,6 @@ Code Modifier 메인 모듈
 LLM을 활용하여 소스 코드에 암호화/복호화 코드를 자동으로 적용하는 메인 클래스입니다.
 """
 
-import importlib
-import inspect
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -18,7 +16,7 @@ from models.table_access_info import TableAccessInfo
 
 from .batch_processor import BatchProcessor
 from .code_patcher import CodePatcher
-from .diff_generator import BaseDiffGenerator
+from .diff_generator import DiffGeneratorFactory
 from .error_handler import ErrorHandler
 from .llm.llm_factory import create_llm_provider
 from .llm.llm_provider import LLMProvider
@@ -40,7 +38,6 @@ class CodeModifier:
         self,
         config: Configuration,
         llm_provider: Optional[LLMProvider] = None,
-        project_root: Optional[Path] = None,
     ):
         """
         CodeModifier 초기화
@@ -48,12 +45,9 @@ class CodeModifier:
         Args:
             config: 설정 객체
             llm_provider: LLM 프로바이더 (선택적, 설정에서 자동 생성)
-            project_root: 프로젝트 루트 디렉토리 (선택적)
         """
         self.config = config
-        self.project_root = (
-            Path(project_root) if project_root else Path(config.target_project)
-        )
+        self.target_project = Path(config.target_project)
 
         # LLM 프로바이더 초기화
         if llm_provider:
@@ -62,7 +56,9 @@ class CodeModifier:
             llm_provider_name = config.llm_provider
             self.llm_provider = create_llm_provider(provider_name=llm_provider_name)
 
-        self.diff_generator = self._get_diff_generator()
+        self.diff_generator = DiffGeneratorFactory.create(
+            config=self.config, llm_provider=self.llm_provider
+        )
         self.modification_context_generator = (
             ModificationContextGeneratorFactory.create(
                 config=self.config,
@@ -74,7 +70,9 @@ class CodeModifier:
         self.batch_processor = BatchProcessor(
             max_workers=config.max_workers,
         )
-        self.code_patcher = CodePatcher(project_root=self.project_root, config=self.config)
+        self.code_patcher = CodePatcher(
+            project_root=self.target_project, config=self.config
+        )
         self.error_handler = ErrorHandler(max_retries=config.max_retries)
         self.result_tracker = ResultTracker()
 
@@ -100,41 +98,6 @@ class CodeModifier:
             return os.getenv("OPENAI_API_KEY")
 
         return None
-
-    def _get_diff_generator(self) -> BaseDiffGenerator:
-        """
-        DiffGenerator 인스턴스를 가져옵니다.
-
-        Returns:
-            BaseDiffGenerator: DiffGenerator 인스턴스
-        """
-        diff_type = self.config.diff_gen_type
-
-        try:
-            # 동적 임포트 경로 생성
-            # 예: .diff_generator.mybatis_service.mybatis_service_diff_generator
-            module_path = f".diff_generator.{diff_type}.{diff_type}_diff_generator"
-
-            # 현재 패키지를 기준으로 모듈 임포트
-            module = importlib.import_module(module_path, package=__package__)
-
-            # 모듈 내에서 BaseDiffGenerator를 상속받는 클래스 탐색
-            for name, obj in inspect.getmembers(module, inspect.isclass):
-                if (
-                    issubclass(obj, BaseDiffGenerator)
-                    and obj is not BaseDiffGenerator
-                    and obj.__module__ == module.__name__
-                ):
-                    return obj(llm_provider=self.llm_provider, config=self.config)
-
-            raise ValueError(f"No suitable DiffGenerator class found in {module_path}")
-
-        except ImportError as e:
-            logger.error(f"Failed to import generator module for {diff_type}: {e}")
-            raise ValueError(f"Invalid diff_type or module not found: {diff_type}")
-        except Exception as e:
-            logger.error(f"Error loading generator for {diff_type}: {e}")
-            raise
 
     def modify_sources(
         self, table_access_info: TableAccessInfo, dry_run: bool = False
@@ -386,7 +349,11 @@ class CodeModifier:
             tokens_used = diff_out.tokens_used
 
             # LLM 응답 파싱
-            parsed_modifications = self.code_patcher.parse_llm_response(diff_out)
+            parsed_modifications = diff_out.parsed_out
+            if parsed_modifications is None:
+                raise ValueError(
+                    "LLM Response parsing failed (parsed_out is None). Check logs for details."
+                )
 
             # 각 수정 사항에 대해 계획 생성
             for mod in parsed_modifications:
@@ -400,7 +367,7 @@ class CodeModifier:
                     logger.warning(
                         f"LLM 응답에 상대 경로가 포함되었습니다: {file_path_str}. 절대 경로로 변환합니다."
                     )
-                    file_path = self.project_root / file_path
+                    file_path = self.target_project / file_path
 
                 # 절대 경로로 정규화
                 file_path = file_path.resolve()

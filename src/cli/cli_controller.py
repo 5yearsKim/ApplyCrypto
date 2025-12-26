@@ -27,6 +27,7 @@ from parser.java_ast_parser import JavaASTParser
 from parser.xml_mapper_parser import XMLMapperParser
 
 from analyzer.db_access_analyzer import DBAccessAnalyzer
+from analyzer.llm_sql_extractor import LLMSQLExtractor
 from analyzer.sql_extractor import SQLExtractor
 from analyzer.sql_parsing_strategy import create_strategy
 from collector.source_file_collector import SourceFileCollector
@@ -37,10 +38,8 @@ from models.source_file import SourceFile
 from models.table_access_info import TableAccessInfo
 from modifier.code_modifier import CodeModifier
 from persistence.cache_manager import CacheManager
-from persistence.data_persistence_manager import (
-    DataPersistenceManager,
-    PersistenceError,
-)
+from persistence.data_persistence_manager import (DataPersistenceManager,
+                                                  PersistenceError)
 
 
 class CLIController:
@@ -85,7 +84,10 @@ class CLIController:
 
         # 서브파서 생성
         subparsers = parser.add_subparsers(
-            dest="command", help="사용 가능한 명령어", metavar="COMMAND"
+            dest="command",
+            title="명령어",
+            description="사용 가능한 명령어 목록:",
+            metavar="COMMAND",
         )
 
         # analyze 명령어 서브파서
@@ -99,6 +101,11 @@ class CLIController:
             type=str,
             default="config.json",
             help="설정 파일 경로 (기본값: config.json)",
+        )
+        analyze_parser.add_argument(
+            "--cached",
+            action="store_true",
+            help="이전 분석 결과(캐시)가 있으면 사용합니다",
         )
 
         # list 명령어 서브파서
@@ -156,6 +163,24 @@ class CLIController:
             "--all",
             action="store_true",
             help="사용자 확인 없이 모든 변경사항을 자동으로 적용합니다",
+        )
+
+        # clear 명령어 서브파서
+        clear_parser = subparsers.add_parser(
+            "clear",
+            help="분석 결과 및 임시 파일을 삭제합니다",
+            description="분석 결과 및 임시 파일을 삭제합니다.",
+        )
+        clear_parser.add_argument(
+            "--config",
+            type=str,
+            default="config.json",
+            help="설정 파일 경로 (기본값: config.json)",
+        )
+        clear_parser.add_argument(
+            "--backup",
+            action="store_true",
+            help="삭제 전 백업을 생성합니다",
         )
 
         return parser
@@ -263,6 +288,8 @@ class CLIController:
                 return self._handle_list(parsed_args)
             elif parsed_args.command == "modify":
                 return self._handle_modify(parsed_args)
+            elif parsed_args.command == "clear":
+                return self._handle_clear(parsed_args)
             else:
                 self.logger.error(f"알 수 없는 명령어: {parsed_args.command}")
                 return 1
@@ -275,6 +302,43 @@ class CLIController:
             return 1
         except Exception as e:
             self.logger.exception(f"명령어 실행 중 오류 발생: {e}")
+            return 1
+
+    def _handle_clear(self, args: argparse.Namespace) -> int:
+        """
+        clear 명령어 핸들러
+
+        Args:
+            args: 파싱된 인자
+
+        Returns:
+            int: 종료 코드
+        """
+        try:
+            # 설정 파일 로드
+            config = self.load_config(args.config)
+            target_project = Path(config.target_project)
+
+            self.logger.info("데이터 삭제 시작...")
+
+            # DataPersistenceManager 초기화
+            persistence_manager = DataPersistenceManager(target_project)
+
+            # 삭제 실행
+            persistence_manager.clear_all(use_backup=args.backup)
+
+            print("모든 데이터가 삭제되었습니다.")
+            if args.backup:
+                print("백업이 생성되었습니다.")
+
+            return 0
+
+        except ConfigurationError as e:
+            print(f"오류: {e}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            self.logger.exception(f"clear 명령어 실행 중 오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
             return 1
 
     def _handle_analyze(self, args: argparse.Namespace) -> int:
@@ -302,20 +366,51 @@ class CLIController:
             # 1. 소스 파일 수집
             print("  [1/5] 소스 파일 수집 중...")
             self.logger.info("소스 파일 수집 시작")
-            collector = SourceFileCollector(config)
-            source_files = list[SourceFile](collector.collect())
-            print(f"  ✓ {len(source_files)}개의 소스 파일을 수집했습니다.")
-            self.logger.info(f"소스 파일 수집 완료: {len(source_files)}개")
 
-            # 소스 파일 저장
-            persistence_manager.save_to_file(
-                [f.to_dict() for f in source_files], "source_files.json"
-            )
+            source_files = []
+            if args.cached:
+                try:
+                    source_files_data = persistence_manager.load_from_file(
+                        "source_files.json", SourceFile
+                    )
+                    source_files = [
+                        SourceFile.from_dict(f) if isinstance(f, dict) else f
+                        for f in source_files_data
+                    ]
+                    print(
+                        f"  ✓ 캐시에서 {len(source_files)}개의 소스 파일을 로드했습니다."
+                    )
+                    self.logger.info(
+                        f"소스 파일 로드 완료 (캐시): {len(source_files)}개"
+                    )
+                except PersistenceError:
+                    pass
+
+            if not source_files:
+                collector = SourceFileCollector(config)
+                source_files = list[SourceFile](collector.collect())
+                print(f"  ✓ {len(source_files)}개의 소스 파일을 수집했습니다.")
+                self.logger.info(f"소스 파일 수집 완료: {len(source_files)}개")
+
+                # 소스 파일 저장
+                persistence_manager.save_to_file(
+                    [f.to_dict() for f in source_files], "source_files.json"
+                )
+
+            # 2. Java AST 파싱 및 Call Graph 생성 (파싱 결과 재사용을 위해 먼저 수행)
+            # Step 2 & 5는 항상 수행 (캐시 사용 안함)
+            table_access_info_list = []
+            java_parse_results = []
+            endpoints = []
+            call_graph_data = {}
+
+            # Java Parser 초기화 (Step 3에서도 사용될 수 있음)
+            java_parser = JavaASTParser(cache_manager=cache_manager)
 
             # 2. Java AST 파싱 및 Call Graph 생성 (파싱 결과 재사용을 위해 먼저 수행)
             print("  [2/5] Java AST 파싱 및 Call Graph 생성 중...")
             self.logger.info("Java AST 파싱 및 Call Graph 생성 시작")
-            java_parser = JavaASTParser(cache_manager=cache_manager)
+
             java_files = [f.path for f in source_files if f.extension == ".java"]
 
             # Call Graph 생성 (내부에서 모든 Java 파일 파싱)
@@ -348,38 +443,91 @@ class CLIController:
                 f"Java AST 파싱 및 Call Graph 생성 완료: {len(java_parse_results)}개 파일, {len(endpoints)}개 엔드포인트"
             )
 
-            # 3. SQL Parsing Strategy 초기 생성
-            print("  [3/5] SQL 추출 중...")
-            self.logger.info("SQL 추출 시작")
-            sql_wrapping_type = config.sql_wrapping_type
-            sql_strategy = create_strategy(sql_wrapping_type)
-
-            # SQL Extractor 초기화
-            xml_parser = XMLMapperParser()
-            sql_extractor = SQLExtractor(
-                strategy=sql_strategy, xml_parser=xml_parser, java_parser=java_parser
-            )
-
-            # SQL 추출 실행
-            sql_extraction_results = sql_extractor.extract_from_files(source_files)
-            print(f"  ✓ {len(sql_extraction_results)}개의 파일에서 SQL을 추출했습니다.")
-
-            total_sql_queries = sum(
-                len(r.get("sql_queries", [])) for r in sql_extraction_results
-            )
-            print(f"  ✓ 총 {total_sql_queries}개의 SQL 쿼리를 추출했습니다.")
-            self.logger.info(
-                f"SQL 추출 완료: {len(sql_extraction_results)}개 파일, {total_sql_queries}개 쿼리"
-            )
-
             # Java 파싱 결과 저장
             persistence_manager.save_to_file(
                 java_parse_results, "java_parse_results.json"
             )
 
-            # SQL 추출 결과 저장 (xml_parse_results.json 대신)
-            persistence_manager.save_to_file(
-                sql_extraction_results, "sql_extraction_results.json"
+            # 3. SQL Parsing Strategy 초기 생성
+            print("  [3/5] SQL 추출 중...")
+            self.logger.info("SQL 추출 시작")
+
+            sql_wrapping_type = config.sql_wrapping_type
+            sql_strategy = create_strategy(sql_wrapping_type)  # Step 5를 위해 필요
+            xml_parser = XMLMapperParser()  # Step 5를 위해 필요
+
+            sql_extraction_results = []
+            if args.cached:
+                try:
+                    from models.sql_extraction_output import \
+                        SQLExtractionOutput
+
+                    sql_extraction_data = persistence_manager.load_from_file(
+                        "sql_extraction_results.json", SQLExtractionOutput
+                    )
+                    sql_extraction_results = [
+                        SQLExtractionOutput.from_dict(r) if isinstance(r, dict) else r
+                        for r in sql_extraction_data
+                    ]
+                    print(
+                        f"  ✓ 캐시에서 {len(sql_extraction_results)}개의 SQL 추출 결과를 로드했습니다."
+                    )
+                    self.logger.info(
+                        f"SQL 추출 결과 로드 완료 (캐시): {len(sql_extraction_results)}개 파일"
+                    )
+
+                except PersistenceError:
+                    pass
+
+            if not sql_extraction_results:
+                # SQL Extractor 초기화
+                if config.use_llm_parser:
+                    print("  [INFO] LLM 파서를 사용하여 SQL을 추출합니다.")
+                    self.logger.info("LLM SQL Extractor 사용")
+
+                    # LLM Provider 이름 가져오기 (설정에서)
+                    llm_provider = config.llm_provider
+
+                    sql_extractor = LLMSQLExtractor(
+                        sql_wrapping_type=sql_wrapping_type,
+                        llm_provider_name=llm_provider,
+                    )
+
+                    # SQL 추출 실행
+                    sql_extraction_results = sql_extractor.extract_from_files(
+                        source_files
+                    )
+                    print(
+                        f"  ✓ {len(sql_extraction_results)}개의 파일에서 SQL을 추출했습니다."
+                    )
+                else:
+                    print("  [INFO] 기본 정적 분석 파서를 사용하여 SQL을 추출합니다.")
+                    self.logger.info("기본 SQL Extractor 사용")
+
+                    sql_extractor = SQLExtractor(
+                        strategy=sql_strategy,
+                        xml_parser=xml_parser,
+                        java_parser=java_parser,
+                    )
+
+                    # SQL 추출 실행
+                    sql_extraction_results = sql_extractor.extract_from_files(
+                        source_files
+                    )
+                    print(
+                        f"  ✓ {len(sql_extraction_results)}개의 파일에서 SQL을 추출했습니다."
+                    )
+
+                # SQL 추출 결과 저장
+                persistence_manager.save_to_file(
+                    [r.to_dict() for r in sql_extraction_results],
+                    "sql_extraction_results.json",
+                )
+
+            total_sql_queries = sum(len(r.sql_queries) for r in sql_extraction_results)
+            print(f"  ✓ 총 {total_sql_queries}개의 SQL 쿼리를 추출했습니다.")
+            self.logger.info(
+                f"SQL 추출 완료: {len(sql_extraction_results)}개 파일, {total_sql_queries}개 쿼리"
             )
 
             # Call Graph 저장 (endpoint별 call tree 포함)
@@ -403,6 +551,7 @@ class CLIController:
             # 5. DB 접근 정보 분석
             print("  [5/5] DB 접근 정보 분석 중...")
             self.logger.info("DB 접근 정보 분석 시작")
+
             db_analyzer = DBAccessAnalyzer(
                 config=config,
                 sql_strategy=sql_strategy,
@@ -829,7 +978,7 @@ class CLIController:
 
             # Call Graph 복원 (저장된 call_trees 사용)
             call_graph_builder = CallGraphBuilder()
-            
+
             # call_trees에서 call_graph 복원
             call_trees = call_graph_data.get("call_trees", [])
             if call_trees:
@@ -837,8 +986,7 @@ class CLIController:
                     endpoints = call_graph_data["endpoints"]
                     # call_graph 복원
                     call_graph_builder.restore_from_call_trees(
-                        call_trees=call_trees,
-                        endpoints=endpoint_objects
+                        call_trees=call_trees, endpoints=endpoint_objects
                     )
                     self.logger.info("Call Graph 복원 완료 (저장된 call_trees 사용)")
                 except Exception as e:
@@ -846,7 +994,9 @@ class CLIController:
                     # 복원 실패 시 기존 방식으로 재생성 (fallback)
                     self.logger.info("Call Graph 재생성 시도 (fallback)...")
                     try:
-                        cache_manager = persistence_manager.cache_manager or CacheManager()
+                        cache_manager = (
+                            persistence_manager.cache_manager or CacheManager()
+                        )
                         java_parser = JavaASTParser(cache_manager=cache_manager)
                         call_graph_builder = CallGraphBuilder(
                             java_parser=java_parser, cache_manager=cache_manager
@@ -858,14 +1008,20 @@ class CLIController:
                             SourceFile.from_dict(f) if isinstance(f, dict) else f
                             for f in source_files_data
                         ]
-                        java_files = [f.path for f in source_files if f.extension == ".java"]
+                        java_files = [
+                            f.path for f in source_files if f.extension == ".java"
+                        ]
                         call_graph_builder.build_call_graph(java_files)
                     except Exception as e2:
                         self.logger.error(f"Call Graph 재생성도 실패: {e2}")
-                        print(f"오류: Call Graph를 복원하거나 재생성할 수 없습니다: {e2}")
+                        print(
+                            f"오류: Call Graph를 복원하거나 재생성할 수 없습니다: {e2}"
+                        )
                         return
             else:
-                self.logger.warning("call_trees가 없어 Call Graph를 복원할 수 없습니다.")
+                self.logger.warning(
+                    "call_trees가 없어 Call Graph를 복원할 수 없습니다."
+                )
                 print("오류: Call Graph 데이터에 call_trees가 없습니다.")
                 return
 
@@ -881,29 +1037,35 @@ class CLIController:
                 )
             else:
                 # 엔드포인트를 찾지 못한 경우, method로 판단하여 모든 call tree에서 검색
-                print(f"엔드포인트 '{endpoint}'를 찾을 수 없습니다. 메서드로 검색합니다...")
-                
+                print(
+                    f"엔드포인트 '{endpoint}'를 찾을 수 없습니다. 메서드로 검색합니다..."
+                )
+
                 # call_trees에서 해당 method_signature를 포함하는 모든 tree 찾기
                 matching_trees = []
-                
-                def find_method_in_tree(node: Dict[str, Any], target_method: str) -> bool:
+
+                def find_method_in_tree(
+                    node: Dict[str, Any], target_method: str
+                ) -> bool:
                     """재귀적으로 트리에서 method_signature를 찾는 함수"""
                     method_sig = node.get("method_signature", "")
-                    if target_method in method_sig or method_sig.endswith(f".{target_method}"):
+                    if target_method in method_sig or method_sig.endswith(
+                        f".{target_method}"
+                    ):
                         return True
-                    
+
                     for child in node.get("children", []):
                         if find_method_in_tree(child, target_method):
                             return True
-                    
+
                     return False
-                
+
                 # 모든 call_tree에서 검색
                 for tree in call_trees:
                     # endpoint 정보 확인
                     endpoint_info = tree.get("endpoint", {})
                     endpoint_method = endpoint_info.get("method_signature", "")
-                    
+
                     # endpoint method_signature와 일치하는지 확인
                     if (
                         endpoint in endpoint_method
@@ -912,32 +1074,36 @@ class CLIController:
                     ):
                         matching_trees.append(tree)
                         continue
-                    
+
                     # 트리 내부에서 method_signature 검색
                     if "method_signature" in tree:
                         if find_method_in_tree(tree, endpoint):
                             matching_trees.append(tree)
-                
                 if matching_trees:
-                    print(f"\n메서드 '{endpoint}'가 사용되는 {len(matching_trees)}개의 호출 그래프를 찾았습니다:")
+                    print(
+                        f"\n메서드 '{endpoint}'가 사용되는 {len(matching_trees)}개의 호출 그래프를 찾았습니다:"
+                    )
                     print("=" * 60)
-                    
                     for idx, tree in enumerate(matching_trees, 1):
                         endpoint_info = tree.get("endpoint", {})
                         endpoint_method = endpoint_info.get("method_signature", "")
                         endpoint_path = endpoint_info.get("path", "")
                         endpoint_http = endpoint_info.get("http_method", "")
-                        
-                        print(f"\n[{idx}/{len(matching_trees)}] 엔드포인트: {endpoint_http} {endpoint_path}")
+                        print(
+                            f"\n[{idx}/{len(matching_trees)}] 엔드포인트: {endpoint_http} {endpoint_path}"
+                        )
                         print(f"Method: {endpoint_method}")
                         print("-" * 60)
-                        
                         # 트리를 출력하기 위해 해당 endpoint로 call_graph에서 출력
                         if endpoint_method:
                             # endpoint 객체 찾기
                             ep_obj = next(
-                                (ep for ep in endpoint_objects if ep.method_signature == endpoint_method),
-                                None
+                                (
+                                    ep
+                                    for ep in endpoint_objects
+                                    if ep.method_signature == endpoint_method
+                                ),
+                                None,
                             )
                             if ep_obj:
                                 call_graph_builder.print_call_tree(
@@ -945,9 +1111,13 @@ class CLIController:
                                 )
                             else:
                                 # endpoint 객체가 없으면 트리 구조를 직접 출력
-                                self._print_tree_structure(tree, target_method=endpoint, indent=0)
+                                self._print_tree_structure(
+                                    tree, target_method=endpoint, indent=0
+                                )
                 else:
-                    print(f"메서드 '{endpoint}'를 사용하는 호출 그래프를 찾을 수 없습니다.")
+                    print(
+                        f"메서드 '{endpoint}'를 사용하는 호출 그래프를 찾을 수 없습니다."
+                    )
                     print("\n사용 가능한 엔드포인트 (method_signature 형식):")
                     for ep in endpoint_objects[:10]:  # 처음 10개 표시
                         print(f"  - {ep.method_signature}")
@@ -955,7 +1125,9 @@ class CLIController:
                         print(f"  ... 외 {len(endpoint_objects) - 10}개")
                     print("\n사용법: list --callgraph <endpoint_or_method>")
                     print("예시: list --callgraph EmpController.login  (엔드포인트)")
-                    print("     list --callgraph getEmpsByPage  (메서드, 부분 매칭 가능)")
+                    print(
+                        "     list --callgraph getEmpsByPage  (메서드, 부분 매칭 가능)"
+                    )
 
         except PersistenceError as e:
             print(f"오류: {e}", file=sys.stderr)
@@ -964,7 +1136,11 @@ class CLIController:
             print(f"오류: {e}", file=sys.stderr)
 
     def _print_tree_structure(
-        self, tree: Dict[str, Any], target_method: str, indent: int = 0, is_last: bool = True
+        self,
+        tree: Dict[str, Any],
+        target_method: str,
+        indent: int = 0,
+        is_last: bool = True,
     ) -> None:
         """
         트리 구조를 재귀적으로 출력합니다.
@@ -978,22 +1154,19 @@ class CLIController:
         method_sig = tree.get("method_signature", "")
         layer = tree.get("layer", "Unknown")
         is_circular = tree.get("is_circular", False)
-        
+
         if method_sig:
             prefix = "   " * indent if indent > 0 else ""
             marker = "└─ " if is_last else "├─ "
             circular_marker = " (recursive/circular)" if is_circular else ""
             highlight = " >>> " if target_method in method_sig else ""
-            
             print(f"{prefix}{marker}{method_sig} [{layer}]{highlight}{circular_marker}")
-        
         # 자식 노드 출력
         children = tree.get("children", [])
         for i, child in enumerate(children):
             is_last_child = i == len(children) - 1
-            extension = "   " if is_last else "│  "
-            new_prefix = prefix + extension if indent > 0 else ""
-            
+            # extension = "   " if is_last else "│  "
+            # new_prefix = prefix + extension if indent > 0 else ""
             self._print_tree_structure(child, target_method, indent + 1, is_last_child)
 
     def _print_diff(self, file_path: str, diff: str):
@@ -1083,9 +1256,7 @@ class CLIController:
                 return 1
 
             # CodeModifier 초기화
-            code_modifier = CodeModifier(
-                config=config, project_root=Path(target_project)
-            )
+            code_modifier = CodeModifier(config=config)
 
             print("  [2/2] 수정 계획 생성 및 적용 중...")
 

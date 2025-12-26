@@ -644,7 +644,9 @@ class CallGraphBuilder:
             # 클래스 어노테이션 추출
             # class ClassName 또는 public class ClassName 앞의 어노테이션들 찾기
             pattern = rf"(?:@\w+(?:\([^)]*\))?\s*)+class\s+{re.escape(target_name)}\b"
-            match = re.search(pattern, source_code_no_comments, re.MULTILINE | re.DOTALL)
+            match = re.search(
+                pattern, source_code_no_comments, re.MULTILINE | re.DOTALL
+            )
             if match:
                 # 매칭된 부분에서 어노테이션 추출
                 matched_text = source_code_no_comments[: match.end()]
@@ -663,7 +665,9 @@ class CallGraphBuilder:
             # 리턴 타입은 제네릭 타입(Collection<Employee>), 배열, 여러 단어 등을 포함할 수 있음
             # 메서드명 바로 앞의 리턴 타입 부분을 더 유연하게 처리
             pattern = rf"(?:@\w+(?:\([^()]*\))?\s*)+(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:final\s+)?(?:[\w<>\[\],\s\.]+)?\s+{re.escape(target_name)}\s*\("
-            match = re.search(pattern, source_code_no_comments, re.MULTILINE | re.DOTALL)
+            match = re.search(
+                pattern, source_code_no_comments, re.MULTILINE | re.DOTALL
+            )
             if match:
                 # 매칭된 부분에서 어노테이션 추출
                 matched_text = source_code_no_comments[: match.end()]
@@ -673,7 +677,9 @@ class CallGraphBuilder:
                 # 어노테이션 패턴 찾기 (중첩 괄호 처리 개선)
                 # 어노테이션은 여러 줄에 걸쳐 있을 수 있으므로 DOTALL 모드 사용
                 annotation_pattern = r"@(\w+)(\((?:[^()]|\([^()]*\))*\))?"
-                for ann_match in re.finditer(annotation_pattern, before_method, re.DOTALL):
+                for ann_match in re.finditer(
+                    annotation_pattern, before_method, re.DOTALL
+                ):
                     ann_name = ann_match.group(1)
                     ann_full = ann_match.group(0)
                     annotation_map[ann_name] = ann_full
@@ -709,7 +715,7 @@ class CallGraphBuilder:
                     break
 
             # 메서드 레벨 엔드포인트 식별
-            
+
             for method in cls.methods:
                 endpoint = self._extract_endpoint(cls, method, class_path)
                 if endpoint:
