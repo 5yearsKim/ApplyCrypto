@@ -64,13 +64,21 @@ class JavaUtils:
                     continue
 
                 # 블록 주석 끝 (*/)
-                if in_block_comment and i < len(source_code) - 1 and source_code[i : i + 2] == "*/":
+                if (
+                    in_block_comment
+                    and i < len(source_code) - 1
+                    and source_code[i : i + 2] == "*/"
+                ):
                     in_block_comment = False
                     i += 2
                     continue
 
                 # 한 줄 주석 시작 (//)
-                if not in_block_comment and i < len(source_code) - 1 and source_code[i : i + 2] == "//":
+                if (
+                    not in_block_comment
+                    and i < len(source_code) - 1
+                    and source_code[i : i + 2] == "//"
+                ):
                     in_single_line_comment = True
                     i += 2
                     continue
@@ -89,4 +97,3 @@ class JavaUtils:
             i += 1
 
         return "".join(result)
-

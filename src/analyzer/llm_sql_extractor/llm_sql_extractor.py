@@ -89,15 +89,32 @@ class LLMSQLExtractor:
                 if f.extension == ".xml" and name_lower.endswith("mapper.xml"):
                     target_files.append(f)
             else:
-                # Filter for *dao.java, *service.java, or *repository.java
-                if f.extension == ".java" and (
-                    name_lower.endswith("dao.java")
-                    or name_lower.endswith("service.java")
-                    or name_lower.endswith("repository.java")
-                ):
+                # Filter for java files that likely contain SQL
+                if f.extension == ".java" and self._has_sql_content(f.path):
                     target_files.append(f)
 
         return target_files
+
+    def _has_sql_content(self, file_path: Path) -> bool:
+        """
+        Check if the file content contains potential SQL statements.
+        """
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+                content_upper = content.upper()
+
+                # Basic SQL keywords
+                keywords = ["SELECT ", "INSERT ", "UPDATE ", "DELETE "]
+
+                for kw in keywords:
+                    if kw in content_upper:
+                        return True
+
+        except Exception as e:
+            self.logger.warning(f"Failed to check SQL content for {file_path}: {e}")
+
+        return False
 
     def _process_single_file(
         self, java_file: SourceFile
