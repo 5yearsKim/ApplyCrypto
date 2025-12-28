@@ -27,12 +27,10 @@ from parser.java_ast_parser import JavaASTParser
 from parser.xml_mapper_parser import XMLMapperParser
 
 from analyzer.db_access_analyzer import DBAccessAnalyzer
-from analyzer.llm_sql_extractor import LLMSQLExtractor
-from analyzer.sql_extractor import SQLExtractor
-from analyzer.sql_parsing_strategy import create_strategy
 from collector.source_file_collector import SourceFileCollector
 from config.config_manager import Configuration, ConfigurationError
 from config.config_manager import load_config as load_global_config
+from models.endpoint import Endpoint
 from models.modification_record import ModificationRecord
 from models.source_file import SourceFile
 from models.table_access_info import TableAccessInfo
@@ -415,9 +413,21 @@ class CLIController:
 
             java_files = [f.path for f in source_files if f.extension == ".java"]
 
+            # EndpointExtractionStrategy 생성
+            from parser.endpoint_strategy import EndpointExtractionStrategyFactory
+
+            framework_type = config.framework_type if hasattr(config, "framework_type") else "SpringMVC"
+            endpoint_strategy = EndpointExtractionStrategyFactory.create(
+                framework_type=framework_type,
+                java_parser=java_parser,
+                cache_manager=cache_manager,
+            )
+
             # Call Graph 생성 (내부에서 모든 Java 파일 파싱)
             call_graph_builder = CallGraphBuilder(
-                java_parser=java_parser, cache_manager=cache_manager
+                java_parser=java_parser,
+                cache_manager=cache_manager,
+                endpoint_strategy=endpoint_strategy,
             )
             call_graph_builder.build_call_graph(java_files)
             endpoints = call_graph_builder.get_endpoints()
@@ -450,13 +460,21 @@ class CLIController:
                 java_parse_results, "java_parse_results.json"
             )
 
-            # 3. SQL Parsing Strategy 초기 생성
+            # 3. SQL 추출
             print("  [3/5] SQL 추출 중...")
             self.logger.info("SQL 추출 시작")
 
-            sql_wrapping_type = config.sql_wrapping_type
-            sql_strategy = create_strategy(sql_wrapping_type)  # Step 5를 위해 필요
             xml_parser = XMLMapperParser()  # Step 5를 위해 필요
+
+            # SQLExtractorFactory를 사용하여 SQL Extractor 생성
+            from analyzer.sql_extractor_factory import SQLExtractorFactory
+
+            sql_extractor = SQLExtractorFactory.create(
+                config=config,
+                xml_parser=xml_parser,
+                java_parse_results=java_parse_results,
+                call_graph_builder=call_graph_builder,
+            )
 
             sql_extraction_results = []
             if args.cached:
@@ -481,43 +499,11 @@ class CLIController:
                     pass
 
             if not sql_extraction_results:
-                # SQL Extractor 초기화
-                if config.use_llm_parser:
-                    print("  [INFO] LLM 파서를 사용하여 SQL을 추출합니다.")
-                    self.logger.info("LLM SQL Extractor 사용")
-
-                    # LLM Provider 이름 가져오기 (설정에서)
-                    llm_provider = config.llm_provider
-
-                    sql_extractor = LLMSQLExtractor(
-                        sql_wrapping_type=sql_wrapping_type,
-                        llm_provider_name=llm_provider,
-                    )
-
-                    # SQL 추출 실행
-                    sql_extraction_results = sql_extractor.extract_from_files(
-                        source_files
-                    )
-                    print(
-                        f"  ✓ {len(sql_extraction_results)}개의 파일에서 SQL을 추출했습니다."
-                    )
-                else:
-                    print("  [INFO] 기본 정적 분석 파서를 사용하여 SQL을 추출합니다.")
-                    self.logger.info("기본 SQL Extractor 사용")
-
-                    sql_extractor = SQLExtractor(
-                        strategy=sql_strategy,
-                        xml_parser=xml_parser,
-                        java_parser=java_parser,
-                    )
-
-                    # SQL 추출 실행
-                    sql_extraction_results = sql_extractor.extract_from_files(
-                        source_files
-                    )
-                    print(
-                        f"  ✓ {len(sql_extraction_results)}개의 파일에서 SQL을 추출했습니다."
-                    )
+                # SQL 추출 실행 (use_llm_parser는 각 Extractor 내부에서 처리)
+                sql_extraction_results = sql_extractor.extract_from_files(source_files)
+                print(
+                    f"  ✓ {len(sql_extraction_results)}개의 파일에서 SQL을 추출했습니다."
+                )
 
                 # SQL 추출 결과 저장
                 persistence_manager.save_to_file(
@@ -555,7 +541,7 @@ class CLIController:
 
             db_analyzer = DBAccessAnalyzer(
                 config=config,
-                sql_strategy=sql_strategy,
+                sql_extractor=sql_extractor,
                 xml_parser=xml_parser,
                 java_parser=java_parser,
                 call_graph_builder=call_graph_builder,
@@ -887,8 +873,6 @@ class CLIController:
                 return
 
             # Endpoint 객체로 변환
-            from parser.call_graph_builder import Endpoint
-
             endpoint_objects = []
             for ep in endpoints:
                 if isinstance(ep, dict):
@@ -953,7 +937,6 @@ class CLIController:
 
             # 엔드포인트 찾기
             endpoints = call_graph_data.get("endpoints", [])
-            from parser.call_graph_builder import Endpoint
 
             # Endpoint 객체로 변환
             endpoint_objects = []
@@ -999,8 +982,22 @@ class CLIController:
                             persistence_manager.cache_manager or CacheManager()
                         )
                         java_parser = JavaASTParser(cache_manager=cache_manager)
+                        # EndpointExtractionStrategy 생성
+                        from parser.endpoint_strategy import EndpointExtractionStrategyFactory
+
+                        # framework_type 기본값 사용 (config 로드 없이)
+                        framework_type = "SpringMVC"  # 기본값
+
+                        endpoint_strategy = EndpointExtractionStrategyFactory.create(
+                            framework_type=framework_type,
+                            java_parser=java_parser,
+                            cache_manager=cache_manager,
+                        )
+
                         call_graph_builder = CallGraphBuilder(
-                            java_parser=java_parser, cache_manager=cache_manager
+                            java_parser=java_parser,
+                            cache_manager=cache_manager,
+                            endpoint_strategy=endpoint_strategy,
                         )
                         source_files_data = persistence_manager.load_from_file(
                             "source_files.json", SourceFile
@@ -1203,13 +1200,14 @@ class CLIController:
             # 설정 파일 로드
             config = self.load_config(args.config)
 
-            # Type Handler 모드 분기
-            if config.type_handler:
+            # modification_type에 따른 분기 처리
+            if config.modification_type == "TypeHandler":
                 self.logger.info("Type Handler 모드로 수정을 진행합니다.")
                 return self._handle_modify_with_type_handler(args, config)
 
-            # Call Chain 모드 분기
-            if config.use_call_chain_mode or config.diff_gen_type == "call_chain":
+            # Call Chain 모드 분기 (기존 호환성을 위해 유지)
+            # TODO: call_chain은 향후 modification_type으로 통합 예정
+            if config.use_call_chain_mode:
                 self.logger.info("Call Chain 모드로 수정을 진행합니다.")
                 return self._handle_modify_with_call_chain(args, config)
 

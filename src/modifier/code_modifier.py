@@ -14,13 +14,12 @@ from models.modification_context import ModificationContext
 from models.modification_plan import ModificationPlan
 from models.table_access_info import TableAccessInfo
 
-from .batch_processor import BatchProcessor
+from .code_generator.code_generator_factory import CodeGeneratorFactory
+from .code_generator.base_code_generator import BaseCodeGenerator
 from .code_patcher import CodePatcher
-from .diff_generator import DiffGeneratorFactory
 from .error_handler import ErrorHandler
 from .llm.llm_factory import create_llm_provider
 from .llm.llm_provider import LLMProvider
-from .modification_context_generator import ModificationContextGeneratorFactory
 from .result_tracker import ResultTracker
 
 logger = logging.getLogger("applycrypto.code_patcher")
@@ -56,20 +55,12 @@ class CodeModifier:
             llm_provider_name = config.llm_provider
             self.llm_provider = create_llm_provider(provider_name=llm_provider_name)
 
-        self.diff_generator = DiffGeneratorFactory.create(
-            config=self.config, llm_provider=self.llm_provider
-        )
-        self.modification_context_generator = (
-            ModificationContextGeneratorFactory.create(
-                config=self.config,
-                diff_generator=self.diff_generator,
-                generator_type="parallel",
-            )
+        # CodeGenerator 생성
+        self.code_generator = CodeGeneratorFactory.create(
+            config=self.config,
+            llm_provider=self.llm_provider,
         )
 
-        self.batch_processor = BatchProcessor(
-            max_workers=config.max_workers,
-        )
         self.code_patcher = CodePatcher(
             project_root=self.target_project, config=self.config
         )
@@ -172,45 +163,10 @@ class CodeModifier:
             table_access_info: 테이블 접근 정보
 
         Returns:
-            List[Dict[str, Any]]: 수정 계획 리스트
+            List[ModificationPlan]: 수정 계획 리스트
         """
-        plans = []
-
-        try:
-            # ModificationContextGenerator를 사용하여 배치 생성
-            all_batches = self.modification_context_generator.generate(
-                table_access_info
-            )
-
-            # 병렬 배치 처리 함수 정의
-            def process_context_wrapper(
-                context: ModificationContext,
-            ) -> List[ModificationPlan]:
-                if not context.code_snippets:
-                    return []
-                return self._generate_batch_plans(
-                    modification_context=context,
-                    template_type="default",
-                    modification_type="encryption",
-                )
-
-            # 병렬 처리 실행
-            plan_batches = self.batch_processor.process_items_parallel(
-                items=all_batches,
-                process_func=process_context_wrapper,
-                desc="파일 수정 계획 생성 중",
-            )
-
-            # 결과 통합
-            for plan_batch in plan_batches:
-                if plan_batch:
-                    plans.extend(plan_batch)
-
-            return plans
-
-        except Exception as e:
-            logger.error(f"계획 생성 실패: {e}")
-            raise
+        # CodeGenerator에 위임
+        return self.code_generator.generate_modification_plans(table_access_info)
 
     def apply_modification_plan(
         self, plan: ModificationPlan, dry_run: bool = False
@@ -306,124 +262,3 @@ class CodeModifier:
                 reason=reason,
             )
 
-    def _generate_batch_plans(
-        self,
-        modification_context: ModificationContext,
-        template_type: str,
-        modification_type: str,
-    ) -> List[ModificationPlan]:
-        """
-        배치 처리를 통해 수정 계획을 생성합니다.
-
-        Args:
-            modification_context: 수정 컨텍스트 (배치 정보 포함)
-            template_type: 템플릿 타입
-            modification_type: 수정 타입
-
-        Returns:
-            List[Dict[str, Any]]: 수정 계획 리스트
-        """
-        plans = []
-        batch = modification_context.code_snippets
-        layer_name = modification_context.layer
-        table_access_info = modification_context.table_access_info
-
-        # 배치 처리
-        try:
-            # variables에서 table_info와 layer_name 추출
-            table_info_str = self._format_table_info(table_access_info)
-
-            # extra_variables 준비
-            extra_vars = {"file_count": len(batch)}
-
-            input_data = DiffGeneratorInput(
-                code_snippets=batch,
-                table_info=table_info_str,
-                layer_name=layer_name,
-                extra_variables=extra_vars,
-            )
-
-            # Diff 생성
-            diff_out = self.diff_generator.generate(input_data)
-
-            tokens_used = diff_out.tokens_used
-
-            # LLM 응답 파싱
-            parsed_modifications = diff_out.parsed_out
-            if parsed_modifications is None:
-                raise ValueError(
-                    "LLM Response parsing failed (parsed_out is None). Check logs for details."
-                )
-
-            # 각 수정 사항에 대해 계획 생성
-            for mod in parsed_modifications:
-                file_path_str = mod.get("file_path", "")
-                reason = mod.get("reason", "")
-                unified_diff = mod.get("unified_diff", "")
-
-                # LLM 응답에서 받은 절대 경로를 그대로 사용
-                file_path = Path(file_path_str)
-                if not file_path.is_absolute():
-                    logger.warning(
-                        f"LLM 응답에 상대 경로가 포함되었습니다: {file_path_str}. 절대 경로로 변환합니다."
-                    )
-                    file_path = self.target_project / file_path
-
-                # 절대 경로로 정규화
-                file_path = file_path.resolve()
-
-                # 계획 객체 생성
-                plan = ModificationPlan(
-                    file_path=str(file_path),
-                    layer_name=layer_name,
-                    modification_type=modification_type,
-                    unified_diff=unified_diff,
-                    reason=reason,
-                    tokens_used=tokens_used,
-                    status="pending",
-                )
-
-                # unified_diff가 빈 문자열인 경우 스킵 상태로 설정
-                if not unified_diff or unified_diff.strip() == "":
-                    logger.info(
-                        f"파일 수정 건너뜀 (계획): {file_path} (이유: {reason})"
-                    )
-                    plan.status = "skipped"
-
-                plans.append(plan)
-
-        except Exception as e:
-            logger.error(f"배치 계획 생성 실패: {e}")
-            # 배치 내 모든 파일에 대해 실패 계획 기록
-            for file_info in batch:
-                plans.append(
-                    ModificationPlan(
-                        file_path=file_info.path,
-                        layer_name=layer_name,
-                        modification_type=modification_type,
-                        status="failed",
-                        error=str(e),
-                        tokens_used=0,
-                    )
-                )
-
-        return plans
-
-    def _format_table_info(self, table_access_info: TableAccessInfo) -> str:
-        """
-        테이블 정보를 JSON 형식으로 포맷팅합니다.
-
-        Args:
-            table_access_info: 테이블 접근 정보
-
-        Returns:
-            str: JSON 형식의 테이블 정보
-        """
-        import json
-
-        table_info = {
-            "table_name": table_access_info.table_name,
-            "columns": table_access_info.columns,
-        }
-
-        return json.dumps(table_info, indent=2, ensure_ascii=False)

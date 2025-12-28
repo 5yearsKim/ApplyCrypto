@@ -24,7 +24,9 @@ ApplyCrypto는 계층형 아키텍처로 설계되어 있으며, 각 레이어�
 
 2. **Configuration Layer** - 설정 관리
    - `ConfigurationManager`: JSON 설정 파일 로드, 스키마 검증, 타입 안전한 설정값 제공
+   - `ConfigMigration`: 기존 설정 파일 마이그레이션 유틸리티
    - 프로젝트 경로, 파일 타입, SQL 래핑 타입, 암호화 대상 테이블/칼럼 정보 관리
+   - Framework Type, SQL Wrapping Type, Modification Type 설정 지원
 
 3. **Collection Layer** - 소스 파일 수집
    - `SourceFileCollector`: 프로젝트 내 소스 파일을 재귀적으로 탐색하고 메타데이터 추출
@@ -33,14 +35,28 @@ ApplyCrypto는 계층형 아키텍처로 설계되어 있으며, 각 레이어�
 4. **Parsing Layer** - 소스 코드 파싱
    - `JavaASTParser`: tree-sitter를 사용하여 Java 소스 코드를 AST로 파싱, 클래스/메서드 정보 추출
    - `XMLMapperParser`: lxml을 사용하여 MyBatis Mapper XML 파일 파싱, SQL 쿼리 및 테이블/칼럼 정보 추출
-   - `CallGraphBuilder`: NetworkX를 사용하여 메서드 호출 관계 그래프 생성, REST API 엔드포인트 식별
+   - `CallGraphBuilder`: NetworkX를 사용하여 메서드 호출 관계 그래프 생성, 클래스 정보 맵 관리
+   - `EndpointExtractionStrategy`: Framework Type별 엔드포인트 추출 전략 (Strategy 패턴)
+     - `SpringMVCEndpointExtraction`: Spring MVC 프레임워크용 엔드포인트 추출
+     - `AnyframeSarangOnEndpointExtraction`: Anyframe SarangOn 프레임워크용 엔드포인트 추출
 
 5. **Analysis Layer** - DB 접근 패턴 분석
    - `DBAccessAnalyzer`: 설정된 테이블/칼럼에 접근하는 소스 파일 식별
+   - `SQLExtractor`: SQL Wrapping Type별 SQL 추출 전략 (Strategy 패턴)
+     - `MyBatisSQLExtractor`: MyBatis XML Mapper에서 SQL 추출
+     - `JDBCSQLExtractor`: Java 소스 코드에서 JDBC SQL 추출
+     - `JPASQLExtractor`: JPA Entity 및 JPQL에서 SQL 추출
+     - `AnyframeJDBCSQLExtractor`: Anyframe 프레임워크의 StringBuilder 기반 JDBC SQL 추출
+   - `LLMSQLExtractor`: LLM 기반 SQL 추출 (공통 유틸리티)
    - Call Graph를 역추적하여 Controller → Service → DAO → Mapper 레이어 경로 추적
 
 6. **Modification Layer** - 코드 자동 수정
    - `CodeModifier`: LLM을 활용한 암호화 코드 자동 삽입의 메인 오케스트레이터
+   - `BaseCodeGenerator`: 코드 생성 추상 클래스
+     - `ControllerOrServiceCodeGenerator`: Controller/Service 레이어 코드 생성
+     - `TypeHandlerCodeGenerator`: MyBatis TypeHandler 코드 생성
+     - `ServiceImplOrBizCodeGenerator`: ServiceImpl/Biz 레이어 코드 생성
+   - `ContextGenerator`: 수정 컨텍스트 배치 생성 및 관리
    - `BatchProcessor`: 대량 파일을 효율적으로 처리하기 위한 배치 최적화
    - `CodePatcher`: LLM 응답을 unified diff 형식으로 파싱하여 실제 코드 변경 적용
    - `ErrorHandler`: 자동 재시도, 백업/롤백 기능 제공
@@ -68,8 +84,14 @@ ApplyCrypto는 계층형 아키텍처로 설계되어 있으며, 각 레이어�
 6. **Persistence → Models**: 모든 데이터 모델을 JSON 형식으로 영속화
 
 **주요 설계 패턴:**
-- **전략 패턴**: LLM Provider 인터페이스를 통한 다양한 AI 모델 지원
-- **팩토리 패턴**: LLMFactory를 통한 프로바이더 생성
+- **전략 패턴**: 
+  - LLM Provider 인터페이스를 통한 다양한 AI 모델 지원
+  - Framework Type별 엔드포인트 추출 전략 (`EndpointExtractionStrategy`)
+  - SQL Wrapping Type별 SQL 추출 전략 (`SQLExtractor`)
+  - Modification Type별 코드 생성 전략 (`BaseCodeGenerator` 하위 클래스)
+- **팩토리 패턴**: 
+  - LLMFactory를 통한 프로바이더 생성
+  - EndpointExtractionStrategyFactory, SQLExtractorFactory, CodeGeneratorFactory
 - **캐싱 패턴**: CacheManager를 통한 파싱 결과 재사용
 - **템플릿 패턴**: PromptTemplateManager를 통한 프롬프트 관리
 
@@ -96,14 +118,28 @@ ApplyCrypto는 계층형 아키텍처로 설계되어 있으며, 각 레이어�
 - `ClassInfo`: 파싱된 클래스 정보 저장
 - `XMLMapperParser`: MyBatis XML 파싱, SQL 쿼리 정보 추출
 - `SQLQuery`: SQL 쿼리 정보 저장
-- `CallGraphBuilder`: Call Graph 생성, 엔드포인트 식별, 호출 체인 추적
+- `CallGraphBuilder`: Call Graph 생성, 호출 체인 추적, 클래스 정보 맵 관리
 - `Endpoint`: REST API 엔드포인트 정보 저장
+- `EndpointExtractionStrategy`: Framework Type별 엔드포인트 추출 전략 (Strategy 패턴)
+  - `SpringMVCEndpointExtraction`: Spring MVC 프레임워크용 엔드포인트 추출
+  - `AnyframeSarangOnEndpointExtraction`: Anyframe SarangOn 프레임워크용 엔드포인트 추출
 
 **Analyzer 패키지:**
 - `DBAccessAnalyzer`: DB 접근 패턴 분석, Call Graph 역추적
+- `SQLExtractor`: SQL Wrapping Type별 SQL 추출 전략 (Strategy 패턴)
+  - `MyBatisSQLExtractor`: MyBatis XML Mapper에서 SQL 추출
+  - `JDBCSQLExtractor`: Java 소스 코드에서 JDBC SQL 추출
+  - `JPASQLExtractor`: JPA Entity 및 JPQL에서 SQL 추출
+  - `AnyframeJDBCSQLExtractor`: Anyframe 프레임워크의 StringBuilder 기반 JDBC SQL 추출
+- `LLMSQLExtractor`: LLM 기반 SQL 추출 (공통 유틸리티)
 
 **Modifier 패키지:**
 - `CodeModifier`: LLM 기반 코드 수정 오케스트레이션
+- `BaseCodeGenerator`: 코드 생성 추상 클래스
+  - `ControllerOrServiceCodeGenerator`: Controller/Service 레이어 코드 생성
+  - `TypeHandlerCodeGenerator`: MyBatis TypeHandler 코드 생성
+  - `ServiceImplOrBizCodeGenerator`: ServiceImpl/Biz 레이어 코드 생성
+- `ContextGenerator`: 수정 컨텍스트 배치 생성 및 관리
 - `BatchProcessor`: 배치 처리 최적화
 - `CodePatcher`: 코드 패치 적용 및 검증
 - `ErrorHandler`: 오류 처리 및 재시도
@@ -190,17 +226,34 @@ samsung-life/
 │   ├── parser/                 # 코드 파싱
 │   │   ├── java_ast_parser.py
 │   │   ├── xml_mapper_parser.py
-│   │   └── call_graph_builder.py
+│   │   ├── call_graph_builder.py
+│   │   └── endpoint_strategy/  # 엔드포인트 추출 전략
+│   │       ├── endpoint_extraction_strategy.py
+│   │       ├── spring_mvc_endpoint_extraction.py
+│   │       └── anyframe_sarangon_endpoint_extraction.py
 │   ├── analyzer/               # DB 접근 분석
 │   │   ├── db_access_analyzer.py
-│   │   └── sql_parsing_strategy.py
+│   │   ├── sql_extractor.py
+│   │   ├── sql_extractor_factory.py
+│   │   └── sql_extractors/     # SQL 추출 전략
+│   │       ├── mybatis_sql_extractor.py
+│   │       ├── jdbc_sql_extractor.py
+│   │       ├── jpa_sql_extractor.py
+│   │       └── anyframe_jdbc_sql_extractor.py
 │   ├── modifier/               # 코드 수정
 │   │   ├── code_modifier.py
+│   │   ├── context_generator.py
 │   │   ├── batch_processor.py
 │   │   ├── code_patcher.py
 │   │   ├── error_handler.py
 │   │   ├── result_tracker.py
 │   │   ├── prompt_template_manager.py
+│   │   ├── code_generator/     # 코드 생성기
+│   │   │   ├── base_code_generator.py
+│   │   │   ├── code_generator_factory.py
+│   │   │   ├── controller_service_type/
+│   │   │   ├── serviceimpl_biz_type/
+│   │   │   └── typehandler_type/
 │   │   └── llm/                # LLM 프로바이더
 │   │       ├── llm_provider.py
 │   │       ├── llm_factory.py
@@ -303,7 +356,9 @@ python main.py modify --config config.json
 {
   "target_project": "/path/to/spring-boot-project",
   "source_file_types": [".java", ".xml"],
+  "framework_type": "SpringMVC",
   "sql_wrapping_type": "mybatis",
+  "modification_type": "ControllerOrService",
   "llm_provider": "watsonx_ai",
   "access_tables": [
     {
@@ -319,6 +374,14 @@ python main.py modify --config config.json
   "exclude_files": ["*Test.java", "*_test.java"]
 }
 ```
+
+**주요 설정 필드:**
+- `framework_type`: 프레임워크 타입 (SpringMVC, AnyframeSarangOn 등)
+- `sql_wrapping_type`: SQL 래핑 기술 (mybatis, jdbc, jpa)
+- `modification_type`: 코드 수정 방식 (TypeHandler, ControllerOrService, ServiceImplOrBiz)
+- `llm_provider`: LLM 프로바이더 (watsonx_ai, openai, claude_ai)
+
+자세한 설정 가이드는 [설정 파일 가이드](docs/config_guide.md)를 참조하세요.
 
 ### Python API 사용
 

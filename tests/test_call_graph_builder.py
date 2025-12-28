@@ -197,25 +197,6 @@ def test_layer_classification(
     assert layer == "DAO"
 
 
-def test_build_call_chains(
-    call_graph_builder, sample_controller_file, sample_service_file, sample_dao_file
-):
-    """호출 체인 생성 테스트"""
-    java_files = [sample_controller_file, sample_service_file, sample_dao_file]
-    call_graph_builder.build_call_graph(java_files)
-
-    chains = call_graph_builder.build_call_chains()
-
-    assert len(chains) > 0
-
-    # getUser -> userService.findById -> userDAO.findById 체인 확인
-    getUser_chain = next(
-        (c for c in chains if "UserController.getUser" in c.chain), None
-    )
-    assert getUser_chain is not None
-    assert "UserController.getUser" in getUser_chain.chain
-
-
 def test_detect_circular_references(call_graph_builder, temp_dir):
     """순환 참조 감지 테스트"""
     # 순환 참조가 있는 Java 코드
@@ -309,29 +290,6 @@ def test_endpoint_extraction(call_graph_builder, sample_controller_file):
     createUser = next((ep for ep in endpoints if ep.method_name == "createUser"), None)
     assert createUser is not None
     assert createUser.http_method == "POST"
-
-
-def test_multiple_layers_call_chain(
-    call_graph_builder, sample_controller_file, sample_service_file, sample_dao_file
-):
-    """다중 레이어 호출 체인 테스트"""
-    java_files = [sample_controller_file, sample_service_file, sample_dao_file]
-    call_graph_builder.build_call_graph(java_files)
-
-    endpoints = call_graph_builder.get_endpoints()
-    getUser_endpoint = next(
-        (ep for ep in endpoints if ep.method_name == "getUser"), None
-    )
-
-    if getUser_endpoint:
-        chains = call_graph_builder.build_call_chains(endpoint=getUser_endpoint)
-
-        assert len(chains) > 0
-
-        # 체인에 여러 레이어가 포함되어야 함
-        chain = chains[0]
-        assert len(chain.chain) > 0
-        assert len(chain.layers) > 0
 
 
 def test_empty_graph(call_graph_builder, temp_dir):

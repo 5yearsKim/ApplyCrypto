@@ -139,11 +139,21 @@ def main():
     # Generate Contexts (Batches)
     try:
         from dataclasses import asdict
+        from modifier.context_generator import ContextGenerator
+        from modifier.code_generator.code_generator_factory import CodeGeneratorFactory
 
-        # Access the generator directly from CodeModifier
-        context_generator = code_modifier.modification_context_generator
+        # Create code generator
+        code_generator = CodeGeneratorFactory.create(
+            config=config,
+            llm_provider=code_modifier.llm_provider
+        )
 
-        batches = context_generator.generate(table_info)
+        # Generate batches using static method
+        batches = ContextGenerator.generate(
+            config=config,
+            code_generator=code_generator,
+            table_access_info=table_info,
+        )
 
         print("\n" + "=" * 50)
         print(f"Generated {len(batches)} Batches (ModificationContexts)")

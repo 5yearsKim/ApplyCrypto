@@ -1,369 +1,182 @@
 @startuml Class Diagram
 !theme plain
 skinparam classAttributeIconSize 0
+skinparam defaultFontSize 16
+skinparam classFontSize 20
+skinparam classFontStyle bold
+skinparam packageFontSize 18
+skinparam packageFontStyle bold
+skinparam arrowThickness 2
+skinparam shadowing false
+skinparam minClassWidth 150
+skinparam maxClassWidth 300
+skinparam linetype ortho
 
-title ApplyCrypto 클래스 다이어그램
+title ApplyCrypto 클래스 다이어그램 (1/2)
 
 package "CLI" {
-  class CLIController {
-    - parser: ArgumentParser
-    - logger: Logger
-    - config_manager: ConfigurationManager
-    + execute(args): int
-    + parse_args(args): Namespace
-    + load_config(path): ConfigurationManager
-    - _handle_analyze(args): int
-    - _handle_list(args): int
-    - _handle_modify(args): int
-  }
+  class CLIController
 }
 
 package "Config" {
-  class ConfigurationManager {
-    - _config_data: Dict
-    - _config_file_path: Path
-    + project_path: Path
-    + source_file_types: List[str]
-    + sql_wrapping_type: str
-    + access_tables: List[Dict]
-    + llm_provider: str
-    + exclude_dirs: List[str]
-    + exclude_files: List[str]
-    - _load_config(): None
-    - _validate_schema(): None
-  }
-  
-  class ConfigurationError {
-    + message: str
-  }
+  class ConfigurationManager
+  class ConfigurationError
 }
 
 package "Collector" {
-  class SourceFileCollector {
-    - _config_manager: ConfigurationManager
-    - _project_path: Path
-    - _source_file_types: List[str]
-    - _seen_files: Set[Path]
-    + collect(): Iterator[SourceFile]
-    + collect_all(): List[SourceFile]
-    - _walk_directory(root): Iterator[Path]
-    - _should_collect(file): bool
-    - _extract_metadata(file): SourceFile
-  }
+  class SourceFileCollector
 }
 
 package "Parser" {
-  class JavaASTParser {
-    - parser: Parser
-    - cache_manager: CacheManager
-    + parse_file(path): Tuple[Tree, str]
-    + extract_class_info(tree, path): List[ClassInfo]
-    - _extract_package(node): str
-    - _parse_class_declaration(node): ClassInfo
-    - _extract_method_info(node): Method
-  }
-  
-  class ClassInfo {
-    + name: str
-    + package: str
-    + superclass: Optional[str]
-    + interfaces: List[str]
-    + annotations: List[str]
-    + fields: List[Dict]
-    + methods: List[Method]
-    + file_path: str
-  }
-  
-  class XMLMapperParser {
-    - logger: Logger
-    + parse_file(path): Tuple[ElementTree, str]
-    + extract_sql_tags(tree): List[SQLQuery]
-    + extract_table_names(sql): List[str]
-    + extract_column_names(sql): List[str]
-    + parse_mapper_file(path): Dict
-  }
-  
-  class SQLQuery {
-    + id: str
-    + query_type: str
-    + sql: str
-    + parameter_type: Optional[str]
-    + result_type: Optional[str]
-    + namespace: str
-  }
-  
-  class CallGraphBuilder {
-    - java_parser: JavaASTParser
-    - cache_manager: CacheManager
-    - call_graph: DiGraph
-    - method_metadata: Dict
-    - class_info_map: Dict
-    - endpoints: List[Endpoint]
-    + build_call_graph(files): DiGraph
-    + get_endpoints(): List[Endpoint]
-    + get_call_tree(endpoint): Dict
-    + print_call_tree(endpoint): None
-    - _identify_endpoints(classes): None
-    - _classify_layer(cls, method): str
-  }
-  
-  class Endpoint {
-    + path: str
-    + http_method: str
-    + method_signature: str
-    + class_name: str
-    + method_name: str
-    + file_path: str
-  }
+  class JavaASTParser
+  class ClassInfo
+  class XMLMapperParser
+  class SQLQuery
+  class CallGraphBuilder
+  class Endpoint
+  abstract class EndpointExtractionStrategy
+  class SpringMVCEndpointExtraction
+  class AnyframeSarangOnEndpointExtraction
+  class EndpointExtractionStrategyFactory
 }
 
 package "Analyzer" {
-  class DBAccessAnalyzer {
-    - config_manager: ConfigurationManager
-    - xml_parser: XMLMapperParser
-    - java_parser: JavaASTParser
-    - call_graph_builder: CallGraphBuilder
-    - sql_strategy: SQLParsingStrategy
-    - table_column_map: Dict
-    + analyze(source_files): List[TableAccessInfo]
-    - _analyze_table_access(table, columns, files): TableAccessInfo
-    - _find_upper_layer_files(method): List[Tuple]
-  }
+  class DBAccessAnalyzer
+  abstract class SQLExtractor
+  class MyBatisSQLExtractor
+  class JDBCSQLExtractor
+  class JPASQLExtractor
+  class AnyframeJDBCSQLExtractor
+  class SQLExtractorFactory
 }
 
+' 관계 정의 (Page 1)
+CLIController --> ConfigurationManager
+CLIController --> SourceFileCollector
+CLIController --> JavaASTParser
+CLIController --> XMLMapperParser
+CLIController --> CallGraphBuilder
+CLIController --> DBAccessAnalyzer
+
+SourceFileCollector --> ConfigurationManager
+SourceFileCollector --> SourceFile
+
+JavaASTParser --> CacheManager
+JavaASTParser --> ClassInfo
+JavaASTParser --> Method
+
+XMLMapperParser --> SQLQuery
+XMLMapperParser --> TableAccessInfo
+
+CallGraphBuilder --> JavaASTParser
+CallGraphBuilder --> CacheManager
+CallGraphBuilder --> Endpoint
+CallGraphBuilder --> Method
+CallGraphBuilder --> CallRelation
+CallGraphBuilder --> EndpointExtractionStrategy
+EndpointExtractionStrategy <|-- SpringMVCEndpointExtraction
+EndpointExtractionStrategy <|-- AnyframeSarangOnEndpointExtraction
+EndpointExtractionStrategyFactory --> EndpointExtractionStrategy
+EndpointExtractionStrategyFactory --> SpringMVCEndpointExtraction
+EndpointExtractionStrategyFactory --> AnyframeSarangOnEndpointExtraction
+
+DBAccessAnalyzer --> ConfigurationManager
+DBAccessAnalyzer --> XMLMapperParser
+DBAccessAnalyzer --> JavaASTParser
+DBAccessAnalyzer --> CallGraphBuilder
+DBAccessAnalyzer --> SQLExtractor
+DBAccessAnalyzer --> TableAccessInfo
+SQLExtractor <|-- MyBatisSQLExtractor
+SQLExtractor <|-- JDBCSQLExtractor
+SQLExtractor <|-- JPASQLExtractor
+SQLExtractor <|-- AnyframeJDBCSQLExtractor
+SQLExtractorFactory --> SQLExtractor
+SQLExtractorFactory --> MyBatisSQLExtractor
+SQLExtractorFactory --> JDBCSQLExtractor
+SQLExtractorFactory --> JPASQLExtractor
+SQLExtractorFactory --> AnyframeJDBCSQLExtractor
+
+newpage
+
+title ApplyCrypto 클래스 다이어그램 (2/2)
+
 package "Modifier" {
-  class CodeModifier {
-    - config_manager: ConfigurationManager
-    - project_root: Path
-    - llm_provider: LLMProvider
-    - template_manager: PromptTemplateManager
-    - batch_processor: BatchProcessor
-    - code_patcher: CodePatcher
-    - error_handler: ErrorHandler
-    - result_tracker: ResultTracker
-    + modify_sources(table_info, dry_run): Dict
-    - _process_batch(batch, ...): List[Dict]
-    - _format_table_info(table_info): str
-  }
-  
-  class BatchProcessor {
-    - template_manager: PromptTemplateManager
-    - max_tokens_per_batch: int
-    + create_batches(files, template_type, variables): List[List]
-    + process_batch(batch, template_type, variables, llm_call): Dict
-  }
-  
-  class CodePatcher {
-    - project_root: Path
-    + parse_llm_response(response): List[Dict]
-    + apply_patch(file_path, diff, dry_run): Tuple[bool, str]
-    + validate_syntax(file_path): Tuple[bool, str]
-  }
-  
-  class ErrorHandler {
-    - max_retries: int
-    + retry_with_backoff(func, *args): Tuple[Any, Exception]
-    + backup_file(file_path): None
-    + restore_file(file_path): None
-  }
-  
-  class ResultTracker {
-    - modifications: List[Dict]
-    - statistics: Dict
-    + start_tracking(): None
-    + end_tracking(): None
-    + record_modification(...): Dict
-    + save_modification_history(table, modifications): None
-  }
-  
-  class PromptTemplateManager {
-    - templates: Dict
-    + load_template(template_type): str
-    + render_template(template, variables): str
-  }
+  class CodeModifier
+  abstract class BaseCodeGenerator
+  class ControllerOrServiceCodeGenerator
+  class ServiceImplOrBizCodeGenerator
+  class TypeHandlerCodeGenerator
+  class CodeGeneratorFactory
+  class ContextGenerator
+  class BatchProcessor
+  class CodePatcher
+  class ErrorHandler
+  class ResultTracker
+  class PromptTemplateManager
 }
 
 package "LLM" {
-  abstract class LLMProvider {
-    + {abstract} call(prompt, max_tokens, temperature): Dict
-    + {abstract} validate_response(response): bool
-    + {abstract} get_provider_name(): str
-  }
-  
-  class LLMFactory {
-    + {static} create_llm_provider(name): LLMProvider
-  }
-  
-  class WatsonXAIProvider {
-    - api_key: str
-    - api_url: Optional[str]
-    - model_id: Optional[str]
-    - project_id: Optional[str]
-    + call(prompt, max_tokens, temperature): Dict
-    + validate_response(response): bool
-    + get_provider_name(): str
-  }
-  
-  class OpenAIProvider {
-    - api_key: str
-    - model_id: Optional[str]
-    + call(prompt, max_tokens, temperature): Dict
-    + validate_response(response): bool
-    + get_provider_name(): str
-  }
-  
-  class ClaudeAIProvider {
-    - api_key: str
-    - model_id: Optional[str]
-    + call(prompt, max_tokens, temperature): Dict
-    + validate_response(response): bool
-    + get_provider_name(): str
-  }
+  abstract class LLMProvider
+  class LLMFactory
+  class WatsonXAIProvider
+  class OpenAIProvider
+  class ClaudeAIProvider
 }
 
 package "Persistence" {
-  class DataPersistenceManager {
-    - project_path: Path
-    - output_dir: Path
-    - cache_manager: Optional[CacheManager]
-    + save_to_file(data, filename, subdirectory): Path
-    + load_from_file(filename, model_class, subdirectory): Any
-    + serialize_to_json(data): str
-    + deserialize_from_json(json_str, model_class): Any
-  }
-  
-  class CacheManager {
-    - cache_dir: Path
-    + get_cached_result(file_path): Optional[Any]
-    + set_cached_result(file_path, data): None
-    + clear_cache(): None
-  }
+  class DataPersistenceManager
+  class CacheManager
 }
 
 package "Models" {
-  class SourceFile {
-    + path: Path
-    + relative_path: Path
-    + filename: str
-    + extension: str
-    + size: int
-    + modified_time: datetime
-    + tags: List[str]
-    + to_dict(): dict
-    + from_dict(data): SourceFile
-  }
-  
-  class TableAccessInfo {
-    + table_name: str
-    + columns: List[Dict]
-    + access_files: List[str]
-    + query_type: str
-    + sql_query: Optional[str]
-    + layer: str
-    + sql_queries: List[Dict]
-    + layer_files: Dict[str, List[str]]
-    + modified_files: List[Dict]
-    + to_dict(): dict
-    + from_dict(data): TableAccessInfo
-  }
-  
-  class Method {
-    + name: str
-    + return_type: str
-    + parameters: List[Parameter]
-    + access_modifier: str
-    + class_name: Optional[str]
-    + file_path: str
-    + annotations: List[str]
-    + method_calls: List[str]
-    + to_dict(): dict
-    + from_dict(data): Method
-  }
-  
-  class Parameter {
-    + name: str
-    + type: str
-    + is_varargs: bool
-  }
-  
-  class CallRelation {
-    + caller: str
-    + callee: str
-    + caller_file: str
-    + callee_file: str
-  }
-  
-  class ModificationRecord {
-    + file_path: str
-    + table_name: str
-    + column_name: str
-    + modified_methods: List[str]
-    + status: str
-    + timestamp: datetime
-  }
+  class SourceFile
+  class TableAccessInfo
+  class Method
+  class Parameter
+  class CallRelation
+  class ModificationRecord
 }
 
-' 관계 정의
-CLIController --> ConfigurationManager : uses
-CLIController --> SourceFileCollector : uses
-CLIController --> JavaASTParser : uses
-CLIController --> XMLMapperParser : uses
-CLIController --> CallGraphBuilder : uses
-CLIController --> DBAccessAnalyzer : uses
-CLIController --> CodeModifier : uses
-CLIController --> DataPersistenceManager : uses
+' 관계 정의 (Page 2)
+CLIController --> CodeModifier
+CLIController --> DataPersistenceManager
 
-SourceFileCollector --> ConfigurationManager : uses
-SourceFileCollector --> SourceFile : creates
+CodeModifier --> ConfigurationManager
+CodeModifier --> BaseCodeGenerator
+CodeModifier --> CodePatcher
+CodeModifier --> ErrorHandler
+CodeModifier --> ResultTracker
+CodeModifier --> TableAccessInfo
+BaseCodeGenerator <|-- ControllerOrServiceCodeGenerator
+BaseCodeGenerator <|-- ServiceImplOrBizCodeGenerator
+BaseCodeGenerator <|-- TypeHandlerCodeGenerator
+CodeGeneratorFactory --> BaseCodeGenerator
+CodeGeneratorFactory --> ControllerOrServiceCodeGenerator
+CodeGeneratorFactory --> ServiceImplOrBizCodeGenerator
+CodeGeneratorFactory --> TypeHandlerCodeGenerator
+ControllerOrServiceCodeGenerator --> ContextGenerator
+ControllerOrServiceCodeGenerator --> BatchProcessor
+ControllerOrServiceCodeGenerator --> PromptTemplateManager
+ControllerOrServiceCodeGenerator --> LLMProvider
+BatchProcessor --> PromptTemplateManager
+BatchProcessor --> LLMProvider
 
-JavaASTParser --> CacheManager : uses
-JavaASTParser --> ClassInfo : creates
-JavaASTParser --> Method : creates
+CodePatcher --> ErrorHandler
 
-XMLMapperParser --> SQLQuery : creates
-XMLMapperParser --> TableAccessInfo : creates
+ResultTracker --> ModificationRecord
 
-CallGraphBuilder --> JavaASTParser : uses
-CallGraphBuilder --> CacheManager : uses
-CallGraphBuilder --> Endpoint : creates
-CallGraphBuilder --> Method : uses
-CallGraphBuilder --> CallRelation : uses
+LLMFactory --> LLMProvider
+WatsonXAIProvider ..|> LLMProvider
+OpenAIProvider ..|> LLMProvider
+ClaudeAIProvider ..|> LLMProvider
 
-DBAccessAnalyzer --> ConfigurationManager : uses
-DBAccessAnalyzer --> XMLMapperParser : uses
-DBAccessAnalyzer --> JavaASTParser : uses
-DBAccessAnalyzer --> CallGraphBuilder : uses
-DBAccessAnalyzer --> TableAccessInfo : creates
+DataPersistenceManager --> CacheManager
+DataPersistenceManager --> SourceFile
+DataPersistenceManager --> TableAccessInfo
+DataPersistenceManager --> Method
+DataPersistenceManager --> CallRelation
+DataPersistenceManager --> ModificationRecord
 
-CodeModifier --> ConfigurationManager : uses
-CodeModifier --> LLMProvider : uses
-CodeModifier --> BatchProcessor : uses
-CodeModifier --> CodePatcher : uses
-CodeModifier --> ErrorHandler : uses
-CodeModifier --> ResultTracker : uses
-CodeModifier --> PromptTemplateManager : uses
-CodeModifier --> TableAccessInfo : uses
-
-BatchProcessor --> PromptTemplateManager : uses
-BatchProcessor --> LLMProvider : uses
-
-CodePatcher --> ErrorHandler : uses
-
-ResultTracker --> ModificationRecord : creates
-
-LLMFactory --> LLMProvider : creates
-WatsonXAIProvider ..|> LLMProvider : implements
-OpenAIProvider ..|> LLMProvider : implements
-ClaudeAIProvider ..|> LLMProvider : implements
-
-DataPersistenceManager --> CacheManager : uses
-DataPersistenceManager --> SourceFile : serializes
-DataPersistenceManager --> TableAccessInfo : serializes
-DataPersistenceManager --> Method : serializes
-DataPersistenceManager --> CallRelation : serializes
-DataPersistenceManager --> ModificationRecord : serializes
-
-Method --> Parameter : contains
+Method --> Parameter
 
 @enduml
-

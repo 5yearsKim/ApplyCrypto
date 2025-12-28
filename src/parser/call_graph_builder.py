@@ -7,7 +7,7 @@ REST API 엔드포인트부터 DAO/Mapper까지 이어지는 호출 체인을 �
 
 import logging
 import re
-from dataclasses import dataclass, field
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -17,72 +17,12 @@ except ImportError:
     nx = None
 
 from models.call_relation import CallRelation
+from models.endpoint import Endpoint
 from models.method import Method
 from persistence.cache_manager import CacheManager
 
 from .java_ast_parser import ClassInfo, JavaASTParser
-from .java_utils import JavaUtils
-
-
-@dataclass
-class Endpoint:
-    """
-    REST API 엔드포인트 정보
-
-    Attributes:
-        path: 엔드포인트 경로
-        http_method: HTTP 메서드 (GET, POST, PUT, DELETE 등)
-        method_signature: 메서드 시그니처 (ClassName.methodName)
-        class_name: 클래스명
-        method_name: 메서드명
-        file_path: 파일 경로
-    """
-
-    path: str
-    http_method: str
-    method_signature: str
-    class_name: str
-    method_name: str
-    file_path: str
-
-    def to_dict(self) -> dict:
-        """딕셔너리 형태로 변환"""
-        return {
-            "path": self.path,
-            "http_method": self.http_method,
-            "method_signature": self.method_signature,
-            "class_name": self.class_name,
-            "method_name": self.method_name,
-            "file_path": self.file_path,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "Endpoint":
-        """딕셔너리로부터 Endpoint 객체 생성"""
-        return cls(
-            path=data["path"],
-            http_method=data["http_method"],
-            method_signature=data["method_signature"],
-            class_name=data["class_name"],
-            method_name=data["method_name"],
-            file_path=data["file_path"],
-        )
-
-
-@dataclass
-class CallChain:
-    """
-    호출 체인 정보
-
-    Attributes:
-        chain: 호출 체인 (메서드 시그니처 리스트)
-        layers: 각 메서드의 레이어 정보
-        is_circular: 순환 참조 여부
-    """
-
-    chain: List[str]
-    layers: List[str] = field(default_factory=list)
-    is_circular: bool = False
+from .endpoint_strategy import EndpointExtractionStrategy
 
 
 class CallGraphBuilder:
@@ -93,71 +33,11 @@ class CallGraphBuilder:
     REST API 엔드포인트부터 시작하는 호출 체인을 구성합니다.
     """
 
-    # Spring 및 프레임워크 어노테이션 패턴
-    SPRING_ANNOTATIONS = {
-        # Spring MVC
-        "RequestMapping",
-        "GetMapping",
-        "PostMapping",
-        "PutMapping",
-        "DeleteMapping",
-        "PatchMapping",
-        "Controller",
-        "RestController",
-        # Spring Core
-        "Service",
-        "Repository",
-        "Component",
-        "Autowired",
-        "Qualifier",
-        # MyBatis
-        "Mapper",
-        "Select",
-        "Insert",
-        "Update",
-        "Delete",
-        "Param",
-        # JPA
-        "Entity",
-        "Table",
-        "Id",
-        "GeneratedValue",
-        "Column",
-        "OneToMany",
-        "ManyToOne",
-        "OneToOne",
-        "ManyToMany",
-        "JoinColumn",
-        "Query",
-        "NamedQuery",
-        "NamedQueries",
-        "EntityManager",
-        "PersistenceContext",
-        # JDBC 관련 (직접 사용하는 경우는 어노테이션이 없을 수 있음)
-        "Transactional",
-    }
-
-    # 레이어 분류 패턴 (MyBatis, JDBC, JPA 모두 지원)
-    LAYER_PATTERNS = {
-        "Controller": ["Controller", "RestController", "WebController"],
-        "Service": ["Service", "BusinessService", "ApplicationService"],
-        "Repository": [
-            "Repository",
-            "JpaRepository",
-            "CrudRepository",
-            "DAO",
-            "Dao",
-            "JdbcDao",
-            "JdbcTemplateDao",
-        ],
-        "Mapper": ["Mapper", "MyBatisMapper", "SqlMapper"],
-        "Entity": ["Entity", "Domain", "Model", "POJO"],
-    }
-
     def __init__(
         self,
         java_parser: Optional[JavaASTParser] = None,
         cache_manager: Optional[CacheManager] = None,
+        endpoint_strategy: Optional[EndpointExtractionStrategy] = None,
     ):
         """
         CallGraphBuilder 초기화
@@ -165,6 +45,7 @@ class CallGraphBuilder:
         Args:
             java_parser: Java AST 파서 (선택적)
             cache_manager: 캐시 매니저 (선택적)
+            endpoint_strategy: 엔드포인트 추출 전략 (선택적, 없으면 기본값 사용)
         """
         if nx is None:
             raise ImportError(
@@ -184,6 +65,9 @@ class CallGraphBuilder:
         else:
             self.java_parser = java_parser
 
+        # EndpointExtractionStrategy 설정
+        self.endpoint_strategy = endpoint_strategy
+
         self.logger = logging.getLogger("applycrypto")
 
         # Call Graph (networkx DiGraph)
@@ -193,13 +77,25 @@ class CallGraphBuilder:
         self.method_metadata: Dict[str, Dict[str, Any]] = {}
 
         # 클래스 정보 (클래스명 -> ClassInfo)
-        self.class_info_map: Dict[str, ClassInfo] = {}
+        self.class_name_to_info: Dict[str, ClassInfo] = {}
 
         # 파일 경로 -> 클래스 정보 리스트 매핑 (파싱된 정보 재사용용)
         self.file_to_classes_map: Dict[str, List[ClassInfo]] = {}
 
+        # 클래스 정보 맵 (클래스명 -> ClassInfo 리스트) - DBAccessAnalyzer에서 사용
+        self.class_info_map: Dict[str, List[Dict[str, Any]]] = {}
+
         # 엔드포인트 목록
         self.endpoints: List[Endpoint] = []
+
+    def get_class_info_map(self) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        클래스 정보 맵 반환 (DBAccessAnalyzer에서 사용하는 형태)
+
+        Returns:
+            Dict[str, List[Dict[str, Any]]]: 클래스명 -> ClassInfo 리스트 매핑
+        """
+        return self.class_info_map
 
     def build_call_graph(self, java_files: List[Path]) -> nx.DiGraph:
         """
@@ -214,8 +110,9 @@ class CallGraphBuilder:
         # 그래프 초기화
         self.call_graph = nx.DiGraph()
         self.method_metadata = {}
-        self.class_info_map = {}
+        self.class_name_to_info = {}
         self.file_to_classes_map = {}
+        self.class_info_map = defaultdict(list)
         self.endpoints = []
 
         # 모든 Java 파일 파싱
@@ -235,7 +132,10 @@ class CallGraphBuilder:
 
             # 클래스 정보 저장
             for cls in classes:
-                self.class_info_map[cls.name] = cls
+                self.class_name_to_info[cls.name] = cls
+
+        # class_info_map 생성 (DBAccessAnalyzer에서 사용할 형태)
+        self.class_info_map = self._build_class_info_map(all_classes)
 
         # 클래스별 필드 정보 수집 (필드명 -> 타입 매핑)
         class_field_map: Dict[str, Dict[str, str]] = {}  # 클래스명 -> {필드명: 타입}
@@ -258,13 +158,20 @@ class CallGraphBuilder:
                 method_signature = f"{cls.name}.{method.name}"
 
                 # 메서드 메타데이터 저장
+                # Strategy가 있으면 Strategy의 classify_layer 사용, 없으면 기본값
+                if self.endpoint_strategy:
+                    layer = self.endpoint_strategy.classify_layer(cls, method)
+                else:
+                    layer = "Unknown"  # 기본값
+
                 self.method_metadata[method_signature] = {
                     "class_name": cls.name,
                     "method": method,
                     "file_path": cls.file_path,
                     "package": cls.package,
                     "annotations": method.annotations,
-                    "layer": self._classify_layer(cls, method),
+                    "layer": layer,
+                    "class_info": cls,  # _get_layer에서 사용하기 위해 추가
                 }
 
                 # 현재 클래스의 필드 정보 가져오기
@@ -312,9 +219,9 @@ class CallGraphBuilder:
                                 field_type = current_field_map[object_name]
 
                                 # 필드 타입이 다른 클래스인 경우 해당 클래스의 메서드로 매핑
-                                if field_type in self.class_info_map:
+                                if field_type in self.class_name_to_info:
                                     callee_signature = f"{field_type}.{callee_method}"
-                                    callee_cls = self.class_info_map[field_type]
+                                    callee_cls = self.class_name_to_info[field_type]
                                     callee_file = callee_cls.file_path
                                 else:
                                     # 필드 타입 클래스를 찾을 수 없는 경우 필드 타입으로 매핑 시도
@@ -324,11 +231,11 @@ class CallGraphBuilder:
                                 variable_type = method_variable_map[object_name]
 
                                 # 변수 타입이 다른 클래스인 경우 해당 클래스의 메서드로 매핑
-                                if variable_type in self.class_info_map:
+                                if variable_type in self.class_name_to_info:
                                     callee_signature = (
                                         f"{variable_type}.{callee_method}"
                                     )
-                                    callee_cls = self.class_info_map[variable_type]
+                                    callee_cls = self.class_name_to_info[variable_type]
                                     callee_file = callee_cls.file_path
                                 else:
                                     # 변수 타입 클래스를 찾을 수 없는 경우 변수 타입으로 매핑 시도
@@ -361,8 +268,8 @@ class CallGraphBuilder:
                             callee_class_name = callee_signature.split(".")[0]
 
                             # callee 클래스가 인터페이스인지 확인
-                            if callee_class_name in self.class_info_map:
-                                callee_class_info = self.class_info_map[
+                            if callee_class_name in self.class_name_to_info:
+                                callee_class_info = self.class_name_to_info[
                                     callee_class_name
                                 ]
                                 if callee_class_info.is_interface_class:
@@ -442,353 +349,147 @@ class CallGraphBuilder:
             self.call_graph.add_edge(relation.caller, relation.callee)
 
         # 엔드포인트 식별
-        self._identify_endpoints(all_classes)
+        if self.endpoint_strategy:
+            self.endpoints = self.endpoint_strategy.extract_endpoints_from_classes(
+                all_classes
+            )
+        else:
+            # Strategy가 없으면 빈 리스트 (하위 호환성)
+            self.endpoints = []
+            self.logger.warning(
+                "EndpointExtractionStrategy가 설정되지 않아 엔드포인트를 추출할 수 없습니다."
+            )
+
+        # 인터페이스 엔드포인트에 대한 구현 클래스의 call relation 추가
+        for endpoint in self.endpoints:
+            endpoint_class_name = endpoint.class_name
+            endpoint_method_name = endpoint.method_name
+            
+            # 엔드포인트가 인터페이스 클래스인지 확인
+            if endpoint_class_name in self.class_name_to_info:
+                endpoint_class_info = self.class_name_to_info[endpoint_class_name]
+                
+                if endpoint_class_info.is_interface_class:
+                    # 해당 인터페이스를 구현하는 클래스 찾기
+                    for impl_cls in all_classes:
+                        # 구현 클래스의 interfaces 목록에 엔드포인트 인터페이스가 있는지 확인
+                        interface_found = False
+                        for interface_name in impl_cls.interfaces:
+                            # 단순 이름 비교
+                            if interface_name == endpoint_class_name:
+                                interface_found = True
+                                break
+                            # 패키지 포함 전체 이름 비교
+                            if "." in interface_name:
+                                simple_interface_name = interface_name.split(".")[-1]
+                                if simple_interface_name == endpoint_class_name:
+                                    interface_found = True
+                                    break
+                            # endpoint_class_name이 패키지 포함 전체 이름인 경우
+                            if "." in endpoint_class_name:
+                                simple_endpoint_name = endpoint_class_name.split(".")[-1]
+                                if interface_name == simple_endpoint_name or interface_name == endpoint_class_name:
+                                    interface_found = True
+                                    break
+                        
+                        if interface_found:
+                            # 구현 클래스의 메서드 시그니처 구성
+                            impl_method_signature = f"{impl_cls.name}.{endpoint_method_name}"
+                            
+                            # 구현 클래스의 메서드가 실제로 존재하는지 확인
+                            method_exists = False
+                            for method in impl_cls.methods:
+                                if method.name == endpoint_method_name:
+                                    method_exists = True
+                                    break
+                            
+                            if not method_exists:
+                                continue
+                            
+                            # endpoint를 caller로, 구현 클래스 메서드를 callee로 하는 새로운 relation 추가
+                            # endpoint 노드가 없으면 추가
+                            if endpoint.method_signature not in self.call_graph:
+                                # 엔드포인트 메서드의 메타데이터 가져오기 또는 생성
+                                endpoint_metadata = self.method_metadata.get(
+                                    endpoint.method_signature,
+                                    {
+                                        "class_name": endpoint.class_name,
+                                        "file_path": endpoint.file_path,
+                                        "layer": "Endpoint",
+                                    }
+                                )
+                                self.call_graph.add_node(
+                                    endpoint.method_signature,
+                                    class_name=endpoint_metadata.get("class_name", endpoint.class_name),
+                                    file_path=endpoint_metadata.get("file_path", endpoint.file_path),
+                                    layer=endpoint_metadata.get("layer", "Endpoint"),
+                                )
+                            
+                            # 구현 클래스 메서드 노드가 없으면 추가
+                            if impl_method_signature not in self.call_graph:
+                                impl_metadata = self.method_metadata.get(
+                                    impl_method_signature,
+                                    {
+                                        "class_name": impl_cls.name,
+                                        "file_path": impl_cls.file_path,
+                                        "layer": "Unknown",
+                                    }
+                                )
+                                self.call_graph.add_node(
+                                    impl_method_signature,
+                                    class_name=impl_metadata.get("class_name", impl_cls.name),
+                                    file_path=impl_metadata.get("file_path", impl_cls.file_path),
+                                    layer=impl_metadata.get("layer", "Unknown"),
+                                )
+                            
+                            # 이미 존재하는 relation인지 확인 후 추가
+                            if not self.call_graph.has_edge(endpoint.method_signature, impl_method_signature):
+                                self.call_graph.add_edge(
+                                    endpoint.method_signature,
+                                    impl_method_signature
+                                )
+                                
+                                self.logger.debug(
+                                    f"인터페이스 엔드포인트 연결 추가: "
+                                    f"{endpoint.method_signature} -> {impl_method_signature}"
+                                )
 
         return self.call_graph
 
-    def _classify_layer(self, cls: ClassInfo, method: Method) -> str:
+    def _build_class_info_map(
+        self, all_classes: List[ClassInfo]
+    ) -> Dict[str, List[Dict[str, Any]]]:
         """
-        클래스와 메서드의 레이어 분류 (MyBatis, JDBC, JPA 모두 지원)
+        클래스 정보를 딕셔너리 리스트 형태로 변환하여 class_info_map 생성
 
         Args:
-            cls: 클래스 정보
-            method: 메서드 정보
+            all_classes: 모든 클래스 정보 리스트
 
         Returns:
-            str: 레이어명 (Controller, Service, DAO, Repository, Mapper, Entity, Unknown)
+            Dict[str, List[Dict[str, Any]]]: 클래스명 -> ClassInfo 리스트 매핑
         """
-        # 어노테이션 기반 분류 (우선순위 높음)
-        all_annotations = cls.annotations + method.annotations
-        annotation_lower = [ann.lower() for ann in all_annotations]
+        class_info_map: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 
-        # Controller 레이어
-        if any(
-            "controller" in ann or "restcontroller" in ann for ann in annotation_lower
-        ):
-            return "Controller"
+        for cls in all_classes:
+            file_path_str = str(cls.file_path)
+            full_class_name = f"{cls.package}.{cls.name}" if cls.package else cls.name
 
-        # Service 레이어
-        if any("service" in ann for ann in annotation_lower):
-            return "Service"
+            # 클래스 정보 딕셔너리 생성
+            class_info_dict = {
+                "class_name": cls.name,
+                "package": cls.package,
+                "full_class_name": full_class_name,
+                "file_path": file_path_str,
+            }
 
-        # MyBatis Mapper 레이어
-        if any("mapper" in ann for ann in annotation_lower):
-            return "Mapper"
+            # 단순 클래스명으로 저장
+            class_info_map[cls.name].append(class_info_dict)
 
-        # JPA Repository 레이어
-        if any("repository" in ann for ann in annotation_lower):
-            return "Repository"
+            # 전체 클래스명으로도 저장 (패키지가 있는 경우)
+            if cls.package:
+                class_info_map[full_class_name].append(class_info_dict)
 
-        # JPA Entity 레이어
-        if any("entity" in ann or "table" in ann for ann in annotation_lower):
-            return "Entity"
-
-        # 클래스명 패턴 기반 분류
-        class_name = cls.name
-        for layer, patterns in self.LAYER_PATTERNS.items():
-            for pattern in patterns:
-                if pattern in class_name:
-                    return layer
-
-        # 인터페이스 기반 분류 (MyBatis Mapper 인터페이스 감지)
-        if cls.interfaces:
-            for interface in cls.interfaces:
-                interface_lower = interface.lower()
-                # MyBatis Mapper 인터페이스 패턴
-                if "mapper" in interface_lower or "sqlmapper" in interface_lower:
-                    return "Mapper"
-                # JPA Repository 인터페이스 패턴
-                if (
-                    "repository" in interface_lower
-                    or "jparepository" in interface_lower
-                ):
-                    return "Repository"
-                # Spring Repository 인터페이스 패턴
-                if (
-                    "crudrepository" in interface_lower
-                    or "pagerepository" in interface_lower
-                ):
-                    return "Repository"
-
-        # 패키지 기반 분류
-        package = cls.package.lower()
-        if "controller" in package or "web" in package or "api" in package:
-            return "Controller"
-        elif "service" in package or "business" in package:
-            return "Service"
-        elif "mapper" in package or "mybatis" in package:
-            return "Mapper"
-        elif "repository" in package or "jpa" in package:
-            return "Repository"
-        elif "dao" in package or "data" in package:
-            return "DAO"
-        elif (
-            "entity" in package
-            or "domain" in package
-            or "model" in package
-            or "beans" in package
-        ):
-            return "Entity"
-
-        # 필드 기반 추론 (JPA EntityManager, MyBatis SqlSession 등)
-        for class_field_info in cls.fields:
-            field_type = class_field_info.get("type", "").lower()
-            if "entitymanager" in field_type or "entitymanagerfactory" in field_type:
-                return "Repository"  # JPA Repository로 추론
-            elif "sqlsession" in field_type or "sqlsessiontemplate" in field_type:
-                return "Mapper"  # MyBatis Mapper로 추론
-            elif "jdbctemplate" in field_type or "datasource" in field_type:
-                return "DAO"  # JDBC DAO로 추론
-
-        return "Unknown"
-
-    def _extract_path_from_annotation(self, annotation: str) -> Optional[str]:
-        """
-        어노테이션 문자열에서 path(value 또는 path 속성) 추출
-
-        Args:
-            annotation: 어노테이션 문자열 (예: "@GetMapping(\"/users\")" 또는 "@RequestMapping(value=\"/api\")")
-
-        Returns:
-            Optional[str]: 추출된 path 또는 None
-        """
-        if not annotation:
-            return None
-
-        # 어노테이션 전체 텍스트를 가져오기 위해 AST에서 직접 추출 시도
-        # 하지만 현재는 문자열만 있으므로 정규표현식으로 파싱
-
-        # 패턴 1: @GetMapping("/path") 또는 @GetMapping(value="/path")
-        # 패턴 2: @RequestMapping(value="/path") 또는 @RequestMapping(path="/path")
-        # 패턴 3: @GetMapping() - path 없음
-
-        # value="/path" 또는 path="/path" 또는 "/path" 형식 추출
-        patterns = [
-            r'value\s*=\s*["\']([^"\']+)["\']',  # value="/path"
-            r'path\s*=\s*["\']([^"\']+)["\']',  # path="/path"
-            r'\(\s*["\']([^"\']+)["\']\s*\)',  # ("/path")
-            r'\(\s*["\']([^"\']+)["\']',  # ("/path" (닫는 괄호 없을 수도)
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, annotation)
-            if match:
-                path = match.group(1)
-                if path:
-                    return path
-
-        return None
-
-    def _extract_http_method_from_annotation(self, annotation: str) -> Optional[str]:
-        """
-        어노테이션에서 HTTP 메서드 추출
-
-        Args:
-            annotation: 어노테이션 문자열
-
-        Returns:
-            Optional[str]: HTTP 메서드 (GET, POST, PUT, DELETE, PATCH) 또는 None
-        """
-        if "GetMapping" in annotation:
-            return "GET"
-        elif "PostMapping" in annotation:
-            return "POST"
-        elif "PutMapping" in annotation:
-            return "PUT"
-        elif "DeleteMapping" in annotation:
-            return "DELETE"
-        elif "PatchMapping" in annotation:
-            return "PATCH"
-        elif "RequestMapping" in annotation:
-            # @RequestMapping(method = RequestMethod.GET) 형식 처리
-            method_match = re.search(
-                r"method\s*=\s*RequestMethod\.(\w+)", annotation, re.IGNORECASE
-            )
-            if method_match:
-                return method_match.group(1).upper()
-            # 기본값은 GET
-            return "GET"
-
-        return None
-
-    def _get_annotation_text_from_file(
-        self, file_path: str, target_name: str, is_class: bool = True
-    ) -> Dict[str, str]:
-        """
-        파일에서 어노테이션 전체 텍스트 추출 (주석 제외)
-
-        Args:
-            file_path: 파일 경로
-            target_name: 클래스명 또는 메서드명
-            is_class: True면 클래스, False면 메서드
-
-        Returns:
-            Dict[str, str]: 어노테이션 이름 -> 전체 텍스트 매핑
-        """
-        annotation_map = {}
-
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                source_code = f.read()
-        except Exception:
-            try:
-                with open(file_path, "r", encoding="euc-kr") as f:
-                    source_code = f.read()
-            except Exception:
-                return annotation_map
-
-        # 주석 제거
-        source_code_no_comments = JavaUtils.remove_java_comments(source_code)
-
-        if is_class:
-            # 클래스 어노테이션 추출
-            # class ClassName 또는 public class ClassName 앞의 어노테이션들 찾기
-            pattern = rf"(?:@\w+(?:\([^)]*\))?\s*)+class\s+{re.escape(target_name)}\b"
-            match = re.search(
-                pattern, source_code_no_comments, re.MULTILINE | re.DOTALL
-            )
-            if match:
-                # 매칭된 부분에서 어노테이션 추출
-                matched_text = source_code_no_comments[: match.end()]
-                # class 키워드 이전 부분
-                before_class = matched_text[: matched_text.rfind("class")]
-                # 어노테이션 패턴 찾기
-                annotation_pattern = r"@(\w+)(\([^)]*\))?"
-                for ann_match in re.finditer(annotation_pattern, before_class):
-                    ann_name = ann_match.group(1)
-                    ann_full = ann_match.group(0)
-                    annotation_map[ann_name] = ann_full
-        else:
-            # 메서드 어노테이션 추출
-            # 메서드 시그니처 앞의 어노테이션들 찾기
-            # @GetMapping(...) public ReturnType methodName(...) 패턴
-            # 리턴 타입은 제네릭 타입(Collection<Employee>), 배열, 여러 단어 등을 포함할 수 있음
-            # 메서드명 바로 앞의 리턴 타입 부분을 더 유연하게 처리
-            pattern = rf"(?:@\w+(?:\([^()]*\))?\s*)+(?:public\s+|private\s+|protected\s+)?(?:static\s+)?(?:final\s+)?(?:[\w<>\[\],\s\.]+)?\s+{re.escape(target_name)}\s*\("
-            match = re.search(
-                pattern, source_code_no_comments, re.MULTILINE | re.DOTALL
-            )
-            if match:
-                # 매칭된 부분에서 어노테이션 추출
-                matched_text = source_code_no_comments[: match.end()]
-                # 메서드명 이전 부분
-                method_name_pos = matched_text.rfind(target_name)
-                before_method = matched_text[:method_name_pos]
-                # 어노테이션 패턴 찾기 (중첩 괄호 처리 개선)
-                # 어노테이션은 여러 줄에 걸쳐 있을 수 있으므로 DOTALL 모드 사용
-                annotation_pattern = r"@(\w+)(\((?:[^()]|\([^()]*\))*\))?"
-                for ann_match in re.finditer(
-                    annotation_pattern, before_method, re.DOTALL
-                ):
-                    ann_name = ann_match.group(1)
-                    ann_full = ann_match.group(0)
-                    annotation_map[ann_name] = ann_full
-
-        return annotation_map
-
-    def _identify_endpoints(self, classes: List[ClassInfo]) -> None:
-        """
-        REST API 엔드포인트 식별
-
-        Args:
-            classes: 클래스 정보 목록
-        """
-        self.endpoints = []
-
-        for cls in classes:
-            # 클래스 레벨 경로 추출
-            class_path = ""
-            # 파일에서 클래스 어노테이션 전체 텍스트 가져오기
-            class_annotations = self._get_annotation_text_from_file(
-                cls.file_path, cls.name, is_class=True
-            )
-
-            for annotation_name in cls.annotations:
-                if "RequestMapping" in annotation_name:
-                    # 파일에서 실제 어노테이션 텍스트 가져오기
-                    full_annotation = class_annotations.get(
-                        annotation_name, annotation_name
-                    )
-                    extracted_path = self._extract_path_from_annotation(full_annotation)
-                    if extracted_path:
-                        class_path = extracted_path
-                    break
-
-            # 메서드 레벨 엔드포인트 식별
-
-            for method in cls.methods:
-                endpoint = self._extract_endpoint(cls, method, class_path)
-                if endpoint:
-                    self.endpoints.append(endpoint)
-
-    def _extract_endpoint(
-        self, cls: ClassInfo, method: Method, class_path: str
-    ) -> Optional[Endpoint]:
-        """
-        메서드에서 엔드포인트 정보 추출
-
-        Args:
-            cls: 클래스 정보
-            method: 메서드 정보
-            class_path: 클래스 레벨 경로
-
-        Returns:
-            Optional[Endpoint]: 엔드포인트 정보
-        """
-        http_method = None
-        method_path = ""
-
-        # 파일에서 메서드 어노테이션 전체 텍스트 가져오기
-        method_annotations = self._get_annotation_text_from_file(
-            cls.file_path, method.name, is_class=False
-        )
-
-        # 메서드 어노테이션 확인
-        for annotation_name in method.annotations:
-            # 파일에서 실제 어노테이션 텍스트 가져오기
-            full_annotation = method_annotations.get(annotation_name, annotation_name)
-
-            # HTTP 메서드 추출
-            extracted_method = self._extract_http_method_from_annotation(
-                full_annotation
-            )
-            if extracted_method:
-                http_method = extracted_method
-                # path 추출
-                extracted_path = self._extract_path_from_annotation(full_annotation)
-                if extracted_path:
-                    method_path = extracted_path
-                break  # 첫 번째 매칭되는 어노테이션 사용
-
-        if http_method:
-            # class_path와 method_path 결합
-            if class_path and method_path:
-                # 둘 다 슬래시로 시작하면 하나 제거
-                if class_path.endswith("/") and method_path.startswith("/"):
-                    full_path = class_path + method_path[1:]
-                elif not class_path.endswith("/") and not method_path.startswith("/"):
-                    full_path = class_path + "/" + method_path
-                else:
-                    full_path = class_path + method_path
-            elif class_path:
-                full_path = class_path
-            elif method_path:
-                full_path = method_path
-            else:
-                full_path = ""
-
-            method_signature = f"{cls.name}.{method.name}"
-
-            return Endpoint(
-                path=full_path,
-                http_method=http_method,
-                method_signature=method_signature,
-                class_name=cls.name,
-                method_name=method.name,
-                file_path=cls.file_path,
-            )
-
-        return None
+        return dict(class_info_map)
 
     def get_endpoints(self) -> List[Endpoint]:
         """
@@ -798,97 +499,6 @@ class CallGraphBuilder:
             List[Endpoint]: 엔드포인트 목록
         """
         return self.endpoints
-
-    def build_call_chains(
-        self, endpoint: Optional[Endpoint] = None, max_depth: int = 10
-    ) -> List[CallChain]:
-        """
-        호출 체인 생성 (DFS 알고리즘)
-
-        Args:
-            endpoint: 시작 엔드포인트 (None이면 모든 엔드포인트에서 시작)
-            max_depth: 최대 탐색 깊이
-
-        Returns:
-            List[CallChain]: 호출 체인 목록
-        """
-        if self.call_graph is None:
-            self.logger.error(
-                "Call Graph가 생성되지 않았습니다. build_call_graph()를 먼저 호출하세요."
-            )
-            return []
-
-        chains = []
-
-        # 시작점 결정
-        if endpoint:
-            start_nodes = [endpoint.method_signature]
-        else:
-            # 모든 엔드포인트에서 시작
-            start_nodes = [ep.method_signature for ep in self.endpoints]
-
-        # 각 시작점에서 DFS 수행
-        for start_node in start_nodes:
-            if start_node not in self.call_graph:
-                continue
-
-            visited_paths: Set[Tuple[str, ...]] = set()
-            current_path: List[str] = []
-
-            def dfs(node: str, depth: int):
-                """DFS 재귀 함수"""
-                # 최대 깊이 확인
-                if depth > max_depth:
-                    return
-
-                # 순환 참조 확인
-                if node in current_path:
-                    # 순환 참조 발견
-                    # cycle_start = current_path.index(node)
-                    # cycle = current_path[cycle_start:] + [node]
-                    chain = CallChain(
-                        chain=current_path + [node],
-                        layers=[self._get_layer(m) for m in current_path + [node]],
-                        is_circular=True,
-                    )
-                    chains.append(chain)
-                    return
-
-                # 현재 경로에 추가
-                current_path.append(node)
-                path_tuple = tuple(current_path)
-
-                # 이미 방문한 경로인지 확인
-                if path_tuple in visited_paths:
-                    current_path.pop()
-                    return
-
-                visited_paths.add(path_tuple)
-
-                # 리프 노드 확인 (더 이상 호출하는 메서드가 없음)
-                if (
-                    node not in self.call_graph
-                    or len(list(self.call_graph.successors(node))) == 0
-                ):
-                    # 호출 체인 완성
-                    chain = CallChain(
-                        chain=current_path.copy(),
-                        layers=[self._get_layer(m) for m in current_path],
-                        is_circular=False,
-                    )
-                    chains.append(chain)
-                else:
-                    # 후속 노드 탐색
-                    for successor in self.call_graph.successors(node):
-                        dfs(successor, depth + 1)
-
-                # 백트래킹
-                current_path.pop()
-
-            # DFS 시작
-            dfs(start_node, 0)
-
-        return chains
 
     def restore_from_call_trees(
         self,
@@ -985,7 +595,23 @@ class CallGraphBuilder:
             str: 레이어명
         """
         if method_signature in self.method_metadata:
-            return self.method_metadata[method_signature].get("layer", "Unknown")
+            metadata = self.method_metadata[method_signature]
+            # 이미 저장된 layer가 있으면 사용
+            if "layer" in metadata:
+                return metadata.get("layer", "Unknown")
+            # Strategy가 있고 class_info와 method가 있으면 재분류
+            elif (
+                self.endpoint_strategy
+                and "class_info" in metadata
+                and "method" in metadata
+            ):
+                cls = metadata["class_info"]
+                method = metadata["method"]
+                layer = self.endpoint_strategy.classify_layer(cls, method)
+                # 메타데이터 업데이트
+                metadata["layer"] = layer
+                return layer
+            return "Unknown"
         elif self.call_graph and method_signature in self.call_graph:
             return self.call_graph.nodes[method_signature].get("layer", "Unknown")
         return "Unknown"
@@ -1022,7 +648,7 @@ class CallGraphBuilder:
         Returns:
             Optional[ClassInfo]: 클래스 정보 (없으면 None)
         """
-        return self.class_info_map.get(class_name)
+        return self.class_name_to_info.get(class_name)
 
     def detect_circular_references(self) -> List[List[str]]:
         """

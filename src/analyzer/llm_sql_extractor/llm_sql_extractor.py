@@ -25,17 +25,14 @@ class LLMSQLExtractor:
 
     def __init__(
         self,
-        sql_wrapping_type: str,
         llm_provider_name: str = "watsonx_ai",
     ):
         """
         Initialize LLMSQLExtractor
 
         Args:
-            sql_wrapping_type: SQL Wrapping Type (mybatis, jpa, jdbc)
             llm_provider_name: LLM Provider Name (default: watsonx_ai)
         """
-        self.sql_wrapping_type = sql_wrapping_type
         self.logger = logging.getLogger(__name__)
         self.llm_provider = create_llm_provider(llm_provider_name)
 
@@ -53,9 +50,11 @@ class LLMSQLExtractor:
     ) -> List[SQLExtractionOutput]:
         """
         Extract SQL queries from source files using LLM.
+        
+        Note: source_files should already be filtered by the caller based on sql_wrapping_type.
 
         Args:
-            source_files: List of source files to analyze
+            source_files: List of source files to analyze (already filtered)
 
         Returns:
             List[SQLExtractionOutput]: List of extracted SQL query information
@@ -64,57 +63,14 @@ class LLMSQLExtractor:
             self.logger.error("Template content is empty. Skipping extraction.")
             return []
 
-        # Filter files based on sql_wrapping_type
-        target_files = self._filter_target_files(source_files)
-
         # Use BatchProcessor for parallel processing
         processor = BatchProcessor()
         results = processor.process_items_parallel(
-            target_files, self._process_single_file, desc="LLM SQL Extraction"
+            source_files, self._process_single_file, desc="LLM SQL Extraction"
         )
 
         # Filter out None results (failed processing)
         return [r for r in results if r is not None]
-
-    def _filter_target_files(self, source_files: List[SourceFile]) -> List[SourceFile]:
-        """
-        Filter source files based on sql_wrapping_type.
-        """
-        target_files = []
-        for f in source_files:
-            name_lower = f.filename.lower()
-
-            if self.sql_wrapping_type == "mybatis":
-                # Filter for *mapper.xml
-                if f.extension == ".xml" and name_lower.endswith("mapper.xml"):
-                    target_files.append(f)
-            else:
-                # Filter for java files that likely contain SQL
-                if f.extension == ".java" and self._has_sql_content(f.path):
-                    target_files.append(f)
-
-        return target_files
-
-    def _has_sql_content(self, file_path: Path) -> bool:
-        """
-        Check if the file content contains potential SQL statements.
-        """
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
-                content_upper = content.upper()
-
-                # Basic SQL keywords
-                keywords = ["SELECT ", "INSERT ", "UPDATE ", "DELETE "]
-
-                for kw in keywords:
-                    if kw in content_upper:
-                        return True
-
-        except Exception as e:
-            self.logger.warning(f"Failed to check SQL content for {file_path}: {e}")
-
-        return False
 
     def _process_single_file(
         self, java_file: SourceFile

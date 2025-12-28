@@ -1,42 +1,49 @@
 {
-  "target_project": "/path/to/project",
-  "source_file_types": [".java", ".xml"],
+  "target_project": "C:\\Users\\swth1\\src\\book-ssm",
+  "source_file_types": [
+    ".java",
+    ".xml"
+  ],
   "sql_wrapping_type": "mybatis",
-  "diff_gen_type": "mybatis_service",
+  "modification_type": "ControllerOrService",
+  "framework_type": "SpringMVC",
+  "llm_provider": "watsonx_ai",
+  "generate_full_source": true,
   "access_tables": [
     {
-      "table_name": "EMPLOYEE",
+      "table_name": "tb_employee",
       "columns": [
         {
-          "name": "NAME",
-          "new_column": false,
-          "encryption_code": "K_SIGN_NAME"
+          "name": "day_of_birth",
+          "new_column": false
         },
         {
-          "name": "JUMIN_NUMBER",
-          "new_column": false,
-          "encryption_code": "K_SIGN_JUMIN"
-        }
-      ]
-    },
-    {
-      "table_name": "CUSTOMER",
-      "columns": [
-        {
-          "name": "PHONE",
-          "new_column": false,
-          "encryption_code": "K_SIGN_PHONE"
+          "name": "sex",
+          "new_column": false
         },
         {
-          "name": "EMAIL",
-          "new_column": false,
-          "encryption_code": "K_SIGN_EMAIL"
+          "name": "last_name",
+          "new_column": false
+        },
+        {
+          "name": "jumin_number",
+          "new_column": false
         }
       ]
     }
   ],
-  "llm_provider": "watsonx_ai",
-  "use_call_chain_mode": false,
-  "exclude_dirs": ["test", "generated"],
-  "exclude_files": ["*Test.java", "*_test.java"]
+  "exclude_dirs": [
+    "test",
+    "generated",
+    "src/test"
+  ],
+  "exclude_files": [
+    "*Test.java",
+    "*_test.java",
+    "*Test*.java",
+    "log4j.xml",
+    "ehcache.xml",
+    "mybatis-config.xml",
+    "spring-servlet.xml"
+  ]
 }

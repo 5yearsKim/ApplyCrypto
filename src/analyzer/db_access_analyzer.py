@@ -17,7 +17,7 @@ from models.source_file import SourceFile
 from models.table_access_info import TableAccessInfo
 from persistence.data_persistence_manager import DataPersistenceManager
 
-from .sql_parsing_strategy import SQLParsingStrategy
+from .sql_extractor import SQLExtractor
 
 
 class DBAccessAnalyzer:
@@ -30,7 +30,7 @@ class DBAccessAnalyzer:
     def __init__(
         self,
         config: Configuration,
-        sql_strategy: SQLParsingStrategy,
+        sql_extractor: SQLExtractor,
         xml_parser: Optional[XMLMapperParser] = None,
         java_parser: Optional[JavaASTParser] = None,
         call_graph_builder: Optional[CallGraphBuilder] = None,
@@ -40,18 +40,19 @@ class DBAccessAnalyzer:
 
         Args:
             config: 설정 객체
-            sql_strategy: SQL 파싱 전략 (필수)
+            sql_extractor: SQL 추출기 (필수)
             xml_parser: XML Mapper 파서 (선택적, 하위 호환성을 위해 유지)
             java_parser: Java AST 파서 (선택적)
             call_graph_builder: Call Graph Builder (선택적)
         """
         self.config = config
-        self.sql_strategy = sql_strategy
+        self.sql_extractor = sql_extractor
         self.xml_parser = xml_parser  # 하위 호환성을 위해 유지하지만 사용하지 않음
         self.java_parser = java_parser or JavaASTParser()
         self.call_graph_builder = call_graph_builder
+        self.class_info_map = self.call_graph_builder.get_class_info_map()
         self.logger = logging.getLogger(__name__)
-
+        
         # 설정에서 테이블 정보 가져오기
         self.access_tables = config.access_tables
 
@@ -61,6 +62,9 @@ class DBAccessAnalyzer:
         self.table_column_info: Dict[
             str, Dict[str, Dict[str, Any]]
         ] = {}  # table_name -> {column_name: {"new_column": bool}}
+        
+        # SQL 추출 결과 (analyze 메서드에서 로드)
+        self.sql_extraction_results: List[Dict[str, Any]] = []
 
         for table_info in self.access_tables:
             table_name = table_info.table_name.lower()
@@ -95,37 +99,22 @@ class DBAccessAnalyzer:
         """
 
         persistence_manager = DataPersistenceManager(Path(self.config.target_project))
-        sql_extraction_results = persistence_manager.load_from_file(
+        self.sql_extraction_results = persistence_manager.load_from_file(
             "sql_extraction_results.json"
         )
 
-        if not sql_extraction_results:
+        if not self.sql_extraction_results:
             self.logger.warning(
                 "sql_extraction_results.json을 찾을 수 없습니다. 먼저 analyze 명령어를 실행하세요."
             )
             return []
 
-        # ClassInfo 목록 수집 (CallGraphBuilder에서 재사용)
-        class_info_map = self._collect_class_info_map(source_files)
-
         # config.json에 설정된 각 DB 테이블에 대해 분석
         table_access_info_list = []
 
-        for table_config in self.access_tables:
-            table_name = table_config.table_name.lower()
-
-            if not table_name:
-                continue
-
-            # 칼럼 목록 추출 (문자열 또는 객체 형식 모두 지원)
-            columns = set()
-            for col in table_config.columns:
-                if isinstance(col, str):
-                    columns.add(col.lower())
-                else:
-                    col_name = col.name
-                    if col_name:
-                        columns.add(col_name.lower())
+        for table_name in self.table_column_map.keys():
+            # self.table_column_map에서 칼럼 목록 가져오기
+            columns = self.table_column_map.get(table_name, set())
 
             # 규칙 1: 테이블만 있고 칼럼 정보가 없는 테이블은 무시
             if not columns:
@@ -138,9 +127,7 @@ class DBAccessAnalyzer:
             table_info = self._analyze_table_access(
                 table_name,
                 columns,
-                source_files,
-                class_info_map,
-                sql_extraction_results,
+                source_files
             )
 
             if table_info:
@@ -148,96 +135,11 @@ class DBAccessAnalyzer:
 
         return table_access_info_list
 
-    def _collect_class_info_map(
-        self, source_files: List[SourceFile]
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        ClassInfo 목록을 수집하여 클래스명 -> 파일 경로 매핑 생성
-
-        Args:
-            source_files: 소스 파일 목록
-
-        Returns:
-            Dict[str, List[Dict[str, Any]]]: 클래스명 -> ClassInfo 리스트 매핑
-        """
-        class_info_map: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-
-        # CallGraphBuilder에서 이미 파싱된 클래스 정보 재사용
-        if self.call_graph_builder and self.call_graph_builder.file_to_classes_map:
-            for (
-                file_path_str,
-                classes,
-            ) in self.call_graph_builder.file_to_classes_map.items():
-                for cls in classes:
-                    # 클래스명 (단순 이름)
-                    class_info_map[cls.name].append(
-                        {
-                            "class_name": cls.name,
-                            "package": cls.package,
-                            "full_class_name": f"{cls.package}.{cls.name}"
-                            if cls.package
-                            else cls.name,
-                            "file_path": file_path_str,
-                        }
-                    )
-
-                    # 패키지 포함 전체 클래스명
-                    if cls.package:
-                        full_class_name = f"{cls.package}.{cls.name}"
-                        class_info_map[full_class_name].append(
-                            {
-                                "class_name": cls.name,
-                                "package": cls.package,
-                                "full_class_name": full_class_name,
-                                "file_path": file_path_str,
-                            }
-                        )
-        else:
-            # CallGraphBuilder가 없으면 직접 파싱
-            java_files = [f for f in source_files if f.extension == ".java"]
-            for java_file in java_files:
-                try:
-                    tree, error = self.java_parser.parse_file(java_file.path)
-                    if error:
-                        continue
-
-                    classes = self.java_parser.extract_class_info(tree, java_file.path)
-                    for cls in classes:
-                        class_info_map[cls.name].append(
-                            {
-                                "class_name": cls.name,
-                                "package": cls.package,
-                                "full_class_name": f"{cls.package}.{cls.name}"
-                                if cls.package
-                                else cls.name,
-                                "file_path": str(java_file.path),
-                            }
-                        )
-
-                        if cls.package:
-                            full_class_name = f"{cls.package}.{cls.name}"
-                            class_info_map[full_class_name].append(
-                                {
-                                    "class_name": cls.name,
-                                    "package": cls.package,
-                                    "full_class_name": full_class_name,
-                                    "file_path": str(java_file.path),
-                                }
-                            )
-                except Exception as e:
-                    self.logger.debug(
-                        f"Java 파일 파싱 중 오류 (무시): {java_file.path} - {e}"
-                    )
-
-        return dict(class_info_map)
-
     def _analyze_table_access(
         self,
         table_name: str,
         columns: Set[str],
-        source_files: List[SourceFile],
-        class_info_map: Dict[str, List[Dict[str, Any]]],
-        sql_extraction_results: List[Dict[str, Any]],
+        source_files: List[SourceFile]
     ) -> Optional[TableAccessInfo]:
         """
         특정 테이블에 대한 접근 정보 분석
@@ -246,13 +148,12 @@ class DBAccessAnalyzer:
             table_name: 테이블명
             columns: 칼럼 목록
             source_files: 소스 파일 목록
-            class_info_map: 클래스 정보 매핑
-            sql_extraction_results: SQL 추출 결과 목록
+            sql_extraction_results: SQL 추출 결과 목록 (선택적, 없으면 self.sql_extraction_results 사용)
 
         Returns:
             Optional[TableAccessInfo]: 테이블 접근 정보
         """
-
+        
         # 수집된 정보
         sql_queries: List[Dict[str, Any]] = []
         interface_files: Set[str] = set()
@@ -263,7 +164,7 @@ class DBAccessAnalyzer:
         )  # 모든 레이어에 추가된 파일 추적 (중복 방지용)
 
         # 각 파일의 SQL 쿼리에 대해 분석
-        for file_result in sql_extraction_results:
+        for file_result in self.sql_extraction_results:
             file_info = file_result.get("file", {})
             file_path = file_info.get("path", "")
 
@@ -286,57 +187,8 @@ class DBAccessAnalyzer:
             for sql_query_info in matching_queries:
                 sql_queries.append(sql_query_info)
 
-                # strategy_specific에서 정보 추출 (전략별로 다름)
-                strategy_specific = sql_query_info.get("strategy_specific", {})
-                strategy_type = type(self.sql_strategy).__name__
-
-                if strategy_type == "MyBatisStrategy":
-                    # MyBatis: namespace와 result_type 사용
-                    namespace = strategy_specific.get("namespace", "")
-                    if namespace:
-                        interface_file = self._find_class_file(
-                            namespace, class_info_map
-                        )
-                        if interface_file and interface_file not in all_added_files:
-                            interface_files.add(interface_file)
-                            layer_files["Repository"].add(interface_file)
-                            all_added_files.add(interface_file)
-
-                    result_type = strategy_specific.get("result_type")
-                    if result_type:
-                        dao_file = self._find_class_file(result_type, class_info_map)
-                        if dao_file and dao_file not in all_added_files:
-                            dao_files.add(dao_file)
-                            layer_files["Repository"].add(dao_file)
-                            all_added_files.add(dao_file)
-
-                    # namespace의 class_name + sql query의 id로 method string 조합
-                    method_string = self._build_method_string(
-                        namespace, sql_query_info.get("id", "")
-                    )
-                elif strategy_type in ["JDBCStrategy", "JPAStrategy"]:
-                    # JDBC/JPA: method_name 사용
-                    method_name = strategy_specific.get("method_name", "")
-                    file_path_str = strategy_specific.get("file_path", file_path)
-
-                    # 파일 경로에서 클래스 찾기
-                    method_string = None
-                    if file_path_str:
-                        # 파일 경로로 클래스 찾기
-                        for class_name, class_infos in class_info_map.items():
-                            for class_info in class_infos:
-                                if class_info["file_path"] == file_path_str:
-                                    method_string = (
-                                        f"{class_info['class_name']}.{method_name}"
-                                    )
-                                    break
-                            if method_string:
-                                break
-
-                    if not method_string:
-                        method_string = method_name
-                else:
-                    method_string = None
+                # sql query에서 사용되는 클래스 파일 경로 정보 추출 (sql_wrapping_type에 따라 다름 )
+                method_string, layer_files, all_added_files = self.sql_extractor.get_class_files_from_sql_query(sql_query_info)
 
                 if (
                     method_string
@@ -454,18 +306,20 @@ class DBAccessAnalyzer:
         """
         matching_queries = []
 
+        # TODO: 김한섭 부장님 수정한 코드 확인할 것.
+        
         for sql_query_info in sql_queries:
             sql = sql_query_info.get("sql", "")
             if not sql:
                 continue
 
             # 테이블명 확인
-            tables = self.sql_strategy.extract_table_names(sql)
+            tables = self.sql_extractor.extract_table_names(sql)
             if table_name.lower() not in {t.lower() for t in tables}:
                 continue
 
             # SQL에서 칼럼 추출
-            sql_columns = self.sql_strategy.extract_column_names(sql, table_name)
+            sql_columns = self.sql_extractor.extract_column_names(sql, table_name)
             sql_columns_lower = {c.lower() for c in sql_columns}
 
             # 규칙 2: new_column=false인 칼럼이 있으면 그 중 하나 이상 사용되는 쿼리만 포함
@@ -480,39 +334,6 @@ class DBAccessAnalyzer:
             matching_queries.append(sql_query_info)
 
         return matching_queries
-
-    def _find_class_file(
-        self, full_class_name: str, class_info_map: Dict[str, List[Dict[str, Any]]]
-    ) -> Optional[str]:
-        """
-        클래스명으로 파일 경로 찾기
-
-        Args:
-            full_class_name: 전체 클래스명 (패키지 포함)
-            class_info_map: 클래스 정보 매핑
-
-        Returns:
-            Optional[str]: 파일 경로
-        """
-        # 전체 클래스명으로 찾기
-        if full_class_name in class_info_map:
-            class_infos = class_info_map[full_class_name]
-            if class_infos:
-                return class_infos[0]["file_path"]
-
-        # 단순 클래스명으로 찾기
-        simple_class_name = full_class_name.split(".")[-1]
-        if simple_class_name in class_info_map:
-            class_infos = class_info_map[simple_class_name]
-            # 패키지명이 일치하는 것 우선
-            for class_info in class_infos:
-                if class_info["full_class_name"] == full_class_name:
-                    return class_info["file_path"]
-            # 없으면 첫 번째 것
-            if class_infos:
-                return class_infos[0]["file_path"]
-
-        return None
 
     def _build_method_string(self, namespace: str, query_id: str) -> Optional[str]:
         """
@@ -636,7 +457,7 @@ class DBAccessAnalyzer:
                 continue
 
             # SQL에서 칼럼 추출
-            sql_columns = self.sql_strategy.extract_column_names(sql, table_name)
+            sql_columns = self.sql_extractor.extract_column_names(sql, table_name)
             sql_columns_lower = {c.lower() for c in sql_columns}
 
             # 설정된 칼럼과 교집합

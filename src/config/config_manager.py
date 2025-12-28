@@ -46,13 +46,26 @@ class Configuration(BaseModel):
     source_file_types: List[str] = Field(
         ..., description="수집할 소스 파일 확장자 목록"
     )
+    framework_type: Literal[
+        "SpringMVC",
+        "AnyframeSarangOn",
+        "AnyframeOld",
+        "AnyframeEtc",
+        "SpringBatQrts",
+        "AnyframeBatSarangOn",
+        "AnyframeBatEtc",
+    ] = Field(
+        "SpringMVC", description="프레임워크 타입"
+    )
     sql_wrapping_type: Literal["mybatis", "jdbc", "jpa"] = Field(
         ..., description="SQL Wrapping 타입"
     )
     access_tables: List[AccessTable] = Field(
         ..., description="암호화 대상 테이블 및 칼럼 정보"
     )
-    diff_gen_type: str = Field(..., description="Diff Generator 타입")
+    modification_type: Literal["TypeHandler", "ControllerOrService", "ServiceImplOrBiz"] = Field(
+        ..., description="코드 수정 타입"
+    )
     llm_provider: Literal[
         "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"
     ] = Field("watsonx_ai", description="사용할 LLM 프로바이더")
@@ -123,6 +136,71 @@ def load_config(config_file_path: str) -> Configuration:
     try:
         with open(path, "r", encoding="utf-8") as f:
             config_data = json.load(f)
+            
+            # 하위 호환성: 마이그레이션 유틸리티를 사용하여 자동 변환
+            from .config_migration import ConfigMigration
+            
+            migrator = ConfigMigration(str(path))
+            migration_result = migrator.migrate(update_file=False, backup=False)
+            
+            if migration_result["migrated"]:
+                # 마이그레이션이 필요한 경우 자동으로 변환
+                for key, value in migration_result["new_values"].items():
+                    config_data[key] = value
+                
+                # 경고 메시지 출력
+                print(
+                    f"\n[경고] config.json에서 마이그레이션이 필요한 필드가 발견되었습니다."
+                )
+                for change in migration_result["changes"]:
+                    print(f"  - {change}")
+                print()
+                
+                # 사용자에게 마이그레이션 여부 확인
+                while True:
+                    try:
+                        response = input(
+                            "config.json 파일을 자동으로 마이그레이션하시겠습니까? (yes/no): "
+                        ).strip().lower()
+                        
+                        if response in ["yes", "y"]:
+                            # 마이그레이션 실행
+                            from .config_migration import migrate_config_file
+                            
+                            print("\n[정보] config.json 파일을 마이그레이션하는 중...")
+                            migrate_result = migrate_config_file(
+                                str(path),
+                                update_file=True,
+                                backup=True,
+                                save_log=True,
+                            )
+                            
+                            if migrate_result["backup_path"]:
+                                print(f"[정보] 백업 파일이 생성되었습니다: {migrate_result['backup_path']}")
+                            
+                            print("[정보] 마이그레이션이 완료되었습니다.\n")
+                            
+                            # 업데이트된 파일 다시 읽기
+                            with open(path, "r", encoding="utf-8") as f:
+                                config_data = json.load(f)
+                            break
+                            
+                        elif response in ["no", "n"]:
+                            print(
+                                "\n[권장] 나중에 config.json을 업데이트하여 구식 필드를 제거하고 "
+                                f"새로운 필드를 사용하세요. 자동 업데이트를 원하시면 "
+                                f"다음 명령어를 사용하세요:\n"
+                                f"  from config import migrate_config_file\n"
+                                f"  migrate_config_file('{path}', update_file=True, backup=True)\n"
+                            )
+                            break
+                        else:
+                            print("  'yes' 또는 'no'를 입력해주세요.")
+                    except (EOFError, KeyboardInterrupt):
+                        # 사용자가 Ctrl+C를 누르거나 입력이 중단된 경우
+                        print("\n[정보] 마이그레이션이 취소되었습니다. 현재 설정으로 계속 진행합니다.\n")
+                        break
+            
             _config = Configuration(**config_data)
             return _config
     except json.JSONDecodeError as e:

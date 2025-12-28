@@ -139,25 +139,6 @@ try:
         print(f"    클래스: {endpoint.class_name}")
         print(f"    파일: {endpoint.file_path}")
 
-    # 호출 체인 생성
-    print("\n" + "=" * 60)
-    print("호출 체인 (Controller -> Service -> DAO)")
-    print("=" * 60)
-
-    if endpoints:
-        getUser_endpoint = next(
-            (ep for ep in endpoints if ep.method_name == "getUser"), None
-        )
-        if getUser_endpoint:
-            chains = builder.build_call_chains(endpoint=getUser_endpoint)
-
-            for i, chain in enumerate(chains[:3], 1):  # 최대 3개만 출력
-                print(f"\n[체인 {i}]")
-                print(f"  순환 참조: {'예' if chain.is_circular else '아니오'}")
-                for j, method in enumerate(chain.chain):
-                    layer = chain.layers[j] if j < len(chain.layers) else "Unknown"
-                    print(f"  {j + 1}. [{layer}] {method}")
-
     # 레이어별 메서드 분류
     print("\n" + "=" * 60)
     print("레이어별 메서드 분류")

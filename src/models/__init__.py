@@ -3,6 +3,7 @@
 """
 
 from .call_relation import CallRelation
+from .endpoint import Endpoint
 from .method import Method, Parameter
 from .modification_record import ModificationRecord
 from .source_file import SourceFile
@@ -15,4 +16,5 @@ __all__ = [
     "CallRelation",
     "TableAccessInfo",
     "ModificationRecord",
+    "Endpoint",
 ]

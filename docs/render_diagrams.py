@@ -34,19 +34,19 @@ def render_diagram(puml_file: Path, output_format: str = "png"):
 
         # 응답 검증
         if not isinstance(diagram_data, bytes):
-            print(f"✗ 오류: 예상치 못한 응답 타입: {type(diagram_data)}")
+            print(f"[ERROR] 예상치 못한 응답 타입: {type(diagram_data)}")
             return False
 
         # HTML 오류 페이지인지 확인
         if diagram_data.startswith(b"<") or diagram_data.startswith(b"<!DOCTYPE"):
-            print("✗ 오류: PlantUML 서버가 HTML 오류 페이지를 반환했습니다.")
+            print("[ERROR] PlantUML 서버가 HTML 오류 페이지를 반환했습니다.")
             error_text = diagram_data[:500].decode("utf-8", errors="ignore")
             print(f"   오류 내용: {error_text[:200]}...")
             return False
 
         # PNG 파일인지 확인 (PNG 시그니처: 89 50 4E 47)
         if not diagram_data.startswith(b"\x89PNG"):
-            print("✗ 오류: 생성된 데이터가 PNG 형식이 아닙니다.")
+            print("[ERROR] 생성된 데이터가 PNG 형식이 아닙니다.")
             print(f"   헤더: {diagram_data[:10]}")
             return False
 
@@ -56,11 +56,11 @@ def render_diagram(puml_file: Path, output_format: str = "png"):
 
         # 파일 크기 확인
         file_size = output_file.stat().st_size
-        print(f"✓ 완료: {output_file} ({file_size:,} bytes)")
+        print(f"[OK] 완료: {output_file} ({file_size:,} bytes)")
         return True
 
     except Exception as e:
-        print(f"✗ 오류 발생: {e}")
+        print(f"[ERROR] 오류 발생: {e}")
         import traceback
 
         traceback.print_exc()
@@ -76,6 +76,7 @@ def main():
     puml_files = [
         script_dir / "component_diagram.puml",
         script_dir / "class_diagram.puml",
+        script_dir / "modifier_component_diagram.puml",
     ]
 
     print("PlantUML 다이어그램 렌더링 시작...\n")
@@ -86,7 +87,7 @@ def main():
             if render_diagram(puml_file, "png"):
                 success_count += 1
         else:
-            print(f"✗ 파일을 찾을 수 없습니다: {puml_file}")
+            print(f"[ERROR] 파일을 찾을 수 없습니다: {puml_file}")
 
     print(f"\n완료: {success_count}/{len(puml_files)}개 파일 렌더링 성공")
 
