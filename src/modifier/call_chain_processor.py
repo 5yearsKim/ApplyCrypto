@@ -15,7 +15,7 @@ from models.diff_generator import DiffGeneratorInput
 from models.modification_context import CodeSnippet
 from models.table_access_info import TableAccessInfo
 
-from .diff_generator.call_chain import CallChainDiffGenerator  # TODO: call_chain은 향후 code_generator로 이동 예정
+# from .diff_generator.call_chain import CallChainDiffGenerator  # TODO: call_chain은 향후 code_generator로 이동 예정
 from .error_handler import ErrorHandler
 from .llm.llm_factory import create_llm_provider
 from .llm.llm_provider import LLMProvider
