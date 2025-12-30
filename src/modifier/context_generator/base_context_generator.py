@@ -9,21 +9,6 @@ from models.modification_context import CodeSnippet, ModificationContext
 from models.table_access_info import TableAccessInfo
 from modifier.code_generator.base_code_generator import BaseCodeGenerator
 
-# Don't remove the following comment.. this is for example format of TableAccessInfo
-# "layer_files": {
-#   "Repository": [
-#     "C:\\Users\\hypot\\Works\\book-ssm\\src\\com\\mybatis\\beans\\Employee.java",
-#     "C:\\Users\\hypot\\Works\\book-ssm\\src\\com\\mybatis\\dao\\EmployeeMapper.java"
-#   ],
-#   "service": [
-#     "C:\\Users\\hypot\\Works\\book-ssm\\src\\com\\mybatis\\service\\EmployeeService.java"
-#   ],
-#   "controller": [
-#     "C:\\Users\\hypot\\Works\\book-ssm\\src\\com\\mybatis\\controller\\EmpController.java",
-#     "C:\\Users\\hypot\\Works\\book-ssm\\src\\com\\mybatis\\controller\\EmployeeController.java"
-#   ]
-# },
-
 logger = logging.getLogger("applycrypto.context_generator")
 
 
@@ -35,25 +20,25 @@ class ContextGenerator:
     handling file reading and token limits.
     """
 
-    @staticmethod
+    def __init__(self, config: Configuration, code_generator: BaseCodeGenerator):
+        self._config = config
+        self._code_generator = code_generator
+
     def generate(
-        config: Configuration,
-        code_generator: BaseCodeGenerator,
+        self,
         table_access_info: TableAccessInfo,
     ) -> List[ModificationContext]:
         """
         Generates modification contexts. Failed files are logged.
 
         Args:
-            config: Configuration object.
-            code_generator: CodeGenerator instance.
             table_access_info: Table access information containing file paths.
 
         Returns:
             List[ModificationContext]: The generated batches of contexts.
         """
         all_batches: List[ModificationContext] = []
-        project_root = Path(config.target_project)
+        project_root = Path(self._config.target_project)
 
         # Layer-wise file grouping
         layer_files = table_access_info.layer_files
@@ -97,9 +82,7 @@ class ContextGenerator:
                     logger.error(f"Failed to read file: {file_path} - {e}")
 
             # Create batches considering token limits
-            modification_context_batches = ContextGenerator.create_batches(
-                config=config,
-                code_generator=code_generator,
+            modification_context_batches = self.create_batches(
                 code_snippets=code_snippets,
                 table_access_info=table_access_info,
                 layer=layer_name,
@@ -109,10 +92,8 @@ class ContextGenerator:
 
         return all_batches
 
-    @staticmethod
     def create_batches(
-        config: Configuration,
-        code_generator: BaseCodeGenerator,
+        self,
         code_snippets: List[CodeSnippet],
         table_access_info: TableAccessInfo,
         layer: str,
@@ -121,8 +102,6 @@ class ContextGenerator:
         Splits file list into batches based on token size.
 
         Args:
-            config: Configuration object.
-            code_generator: CodeGenerator instance.
             code_snippets: List of code snippets.
             table_access_info: Table access information.
             layer: Layer name.
@@ -142,18 +121,18 @@ class ContextGenerator:
             "columns": table_access_info.columns,
         }
         formatted_table_info = json.dumps(table_info, indent=2, ensure_ascii=False)
-        max_tokens = config.max_tokens_per_batch
+        max_tokens = self._config.max_tokens_per_batch
 
         input_empty_data = DiffGeneratorInput(
             code_snippets=[], table_info=formatted_table_info, layer_name=layer
         )
 
         # Create empty prompt and calculate tokens
-        empty_prompt = code_generator.create_prompt(input_empty_data)
-        empty_num_tokens = code_generator.calculate_token_size(empty_prompt)
+        empty_prompt = self._code_generator.create_prompt(input_empty_data)
+        empty_num_tokens = self._code_generator.calculate_token_size(empty_prompt)
 
         # Calculate separator tokens ("\n\n")
-        separator_tokens = code_generator.calculate_token_size("\n\n")
+        separator_tokens = self._code_generator.calculate_token_size("\n\n")
 
         current_batch_tokens = empty_num_tokens
 
@@ -162,7 +141,7 @@ class ContextGenerator:
             snippet_formatted = (
                 f"=== File Path (Absolute): {snippet.path} ===\n{snippet.content}"
             )
-            snippet_tokens = code_generator.calculate_token_size(snippet_formatted)
+            snippet_tokens = self._code_generator.calculate_token_size(snippet_formatted)
 
             # Add separator tokens if not the first snippet
             tokens_to_add = snippet_tokens
@@ -201,4 +180,3 @@ class ContextGenerator:
             f"Split {len(code_snippets)} files into {len(batches)} batches (ModificationContext)."
         )
         return batches
-

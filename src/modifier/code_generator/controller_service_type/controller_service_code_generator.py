@@ -17,7 +17,7 @@ from models.modification_context import ModificationContext
 from models.modification_plan import ModificationPlan
 from models.table_access_info import TableAccessInfo
 from modifier.batch_processor import BatchProcessor
-from modifier.context_generator import ContextGenerator
+from modifier.context_generator import ContextGeneratorFactory
 from modifier.llm.llm_provider import LLMProvider
 
 from ..base_code_generator import BaseCodeGenerator
@@ -109,9 +109,11 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
 
         try:
             # ContextGenerator를 사용하여 배치 생성
-            all_batches = ContextGenerator.generate(
+            context_generator = ContextGeneratorFactory.create(
                 config=self.config,
                 code_generator=self,
+            )
+            all_batches = context_generator.generate(
                 table_access_info=table_access_info,
             )
 
