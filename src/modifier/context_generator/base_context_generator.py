@@ -51,35 +51,7 @@ class ContextGenerator:
                 f"Preparing plan generation for layer '{layer_name}': {len(file_paths)} files"
             )
 
-            code_snippets: List[CodeSnippet] = []
-            for file_path in file_paths:
-                try:
-                    # Convert file path to absolute
-                    file_path_obj = Path(file_path)
-                    if not file_path_obj.is_absolute():
-                        full_path = project_root / file_path_obj
-                    else:
-                        full_path = file_path_obj
-
-                    # Resolve absolute path
-                    full_path = full_path.resolve()
-
-                    if full_path.exists():
-                        with open(full_path, "r", encoding="utf-8") as f:
-                            content = f.read()
-                        code_snippets.append(
-                            CodeSnippet(
-                                path=str(full_path),
-                                content=content,
-                            )
-                        )
-                    else:
-                        logger.warning(
-                            f"File not found: {full_path} (Original path: {file_path})"
-                        )
-
-                except Exception as e:
-                    logger.error(f"Failed to read file: {file_path} - {e}")
+            code_snippets = self._read_files(file_paths, project_root)
 
             # Create batches considering token limits
             modification_context_batches = self.create_batches(
@@ -180,3 +152,45 @@ class ContextGenerator:
             f"Split {len(code_snippets)} files into {len(batches)} batches (ModificationContext)."
         )
         return batches
+
+    def _read_files(self, file_paths: List[str], project_root: Path) -> List[CodeSnippet]:
+        """
+        Reads files and returns a list of CodeSnippets.
+
+        Args:
+            file_paths: List of file paths to read.
+            project_root: The root directory of the project for resolving relative paths.
+
+        Returns:
+            List[CodeSnippet]: List of read code snippets.
+        """
+        code_snippets: List[CodeSnippet] = []
+        for file_path in file_paths:
+            try:
+                file_path_obj = Path(file_path)
+                if not file_path_obj.is_absolute():
+                    full_path = project_root / file_path_obj
+                else:
+                    full_path = file_path_obj
+
+                # Resolve absolute path
+                full_path = full_path.resolve()
+
+                if full_path.exists():
+                    with open(full_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    code_snippets.append(
+                        CodeSnippet(
+                            path=str(full_path),
+                            content=content,
+                        )
+                    )
+                else:
+                    logger.warning(
+                        f"File not found: {full_path} (Original path: {file_path})"
+                    )
+
+            except Exception as e:
+                logger.error(f"Failed to read file: {file_path} - {e}")
+
+        return code_snippets

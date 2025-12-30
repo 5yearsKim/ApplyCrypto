@@ -3,13 +3,25 @@ from modifier.code_generator.base_code_generator import BaseCodeGenerator
 from modifier.context_generator.base_context_generator import ContextGenerator
 
 
+
+from modifier.context_generator.jdbc_context_generator import (
+    JdbcContextGenerator,
+)
+
+
+from modifier.context_generator.mybatis_context_generator import (
+    MybatisContextGenerator,
+)
+
 class ContextGeneratorFactory:
     """
     Factory for creating ContextGenerator instances.
     """
 
     @staticmethod
-    def create(config: Configuration, code_generator: BaseCodeGenerator) -> ContextGenerator:
+    def create(
+        config: Configuration, code_generator: BaseCodeGenerator
+    ) -> ContextGenerator:
         """
         Creates a ContextGenerator instance.
 
@@ -20,6 +32,9 @@ class ContextGeneratorFactory:
         Returns:
             ContextGenerator: An instance of ContextGenerator.
         """
-        # In the future, logic can be added here to select different
-        # ContextGenerator implementations based on config or other parameters.
+        if config.sql_wrapping_type == "jdbc":
+            return JdbcContextGenerator(config, code_generator)
+        elif config.sql_wrapping_type == "mybatis":
+            return MybatisContextGenerator(config, code_generator)
+
         return ContextGenerator(config, code_generator)
