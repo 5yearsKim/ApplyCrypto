@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List
 
 from config.config_manager import Configuration
-from models.diff_generator import DiffGeneratorInput
+from models.code_generator import CodeGeneratorInput
 from models.modification_context import CodeSnippet, ModificationContext
 from models.table_access_info import TableAccessInfo
 from modifier.code_generator.base_code_generator import BaseCodeGenerator
@@ -69,7 +69,7 @@ class BaseContextGenerator(ABC):
         formatted_table_info = json.dumps(table_info, indent=2, ensure_ascii=False)
         max_tokens = self._config.max_tokens_per_batch
 
-        input_empty_data = DiffGeneratorInput(
+        input_empty_data = CodeGeneratorInput(
             code_snippets=[], table_info=formatted_table_info, layer_name=layer
         )
 
