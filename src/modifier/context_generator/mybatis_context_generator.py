@@ -61,7 +61,7 @@ class MybatisContextGenerator(BaseContextGenerator):
             else:
                 # If it doesn't match the convention, treat it as its own group
                 # using the filename as the key.
-                files_by_name[filename].append(file_path)
+                files_by_name["others"].append(file_path)
 
         logger.info(f"Grouped files into {len(files_by_name)} entity contexts.")
 
@@ -71,6 +71,8 @@ class MybatisContextGenerator(BaseContextGenerator):
         
         for name in sorted_names:
             paths = files_by_name[name]
+            if name == "others":
+                continue
             
             # Deduplicate paths just in case
             paths = sorted(list(set(paths)))

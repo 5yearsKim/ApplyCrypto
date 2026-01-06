@@ -40,6 +40,7 @@ You have to set kSignValue value depending on each type of the information :
 - For Birth Date type : K_SIGN_DOB
 
 ### 3. Modification Strategy
+#### Types of modification
 You have to modify source codes depending on each thpe of the information :
 
 ** For JUMIN Number (Social Security Number) type :**
@@ -62,34 +63,33 @@ You have to modify source codes depending on each thpe of the information :
 -- That could be done mainly with calling setters of DTO/DAO instances in the service layer. You have to decide the best way to do it by investigating existing codes.
 -- Example: `dto.setDob(date)` → `dto.setDob(k_sign.CryptoService.encrypt(date, P30, K_SIGN_DOB))`
 
-- For READ operations (DB SELECT): yoy have to apply decryption method AFTER the value is retrieved from DTO/Entity
--- That could be done mainly with calling getters of DTO/DAO instances in the service layer. You have to decide the best way to do it by investigating existing codes.
-- Example: `String date = dto.getDob()` → `String date = k_sign.CryptoService.decrypt(dto.getDob(), P30, K_SIGN_DOB)`
+#### Modification Steps
+Source code modifications must be approached through the following step-by-step process of thinking, execution, and verification:
 
-** Special Method Parameter Rules :**
-- **Trigger**: Method name contains `get` or `select` AND input parameter is `custnm`(CUST_NM) or `acnmNo`(ACNM_NO).
-- **Action**: Apply encryption code `ksignService.encrypt()`.
-- **Example**: `reqData.add("CUST_NM", ksignService.encrypt(KsignConstants.NAME, custNm));`
+Identify locations in the source code that require changes and select them as candidate code. Candidate code should be selected separately for each table, column name, and variable names that can be inferred from them. For each selected candidate code, proceed with the modification work through steps 2-6 below.
 
-** Special History Data Rules :**
-- **Trigger**: Parameter value/name is `hst` or `history`.
-- **Action**: Apply encryption logic.
-- **Example**: `ksignService.encrypt(KsignConstants.NAME, custNm);`
+Determine whether the data object used in the candidate code belongs to downstream or upstream. The process for making this determination is described in the sub-steps below.
 
-** Integration Point Exclusions :**
-- **Trigger**: Code related to "Alim" (Notification) or "SMS".
-- **Action**: Do NOT apply encryption/decryption. Treat as integration points which are excluded.
+2-1. The application is a backend application written in Java, and the framework can vary, including Spring, Anyframe, etc. The source code for each framework is divided into upper layer, middle layer, and lower layer. For example, as follows:
 
-### 4. Layer-Specific Modification Strategy
+2-2. In the case of Spring framework, controller source files belong to the upper layer, service/service implementation belongs to the middle layer, and mapper or external interface source files belong to the lower layer. Among the lower layers, mapper is related to the database while external interface is not related to the database.
 
-**Priority: Service Layer**
-- For inserting new encyption/decryption codes, focus modifications in Service layer or service interface layer as much as possible.
-- When source codes for other layers including controller, repository, mapper etc are provided, you must investigate them to decide how to change source codes in the service layer. You must not modify such other layers if it is not absolutely required. 
-- For chaing existing encyption/decryption codes particularly for JUMIN Number (Social Security Number) type, you have to change it regardless its layer.
+2-3. In the case of Anyframe framework, service/service implementation source files belong to the upper layer, business source files belong to the middle layer, and dem/dqm or external interface source files belong to the lower layer. Among the lower layers, dem/dqm is related to the database while external interface is not related to the database.
 
-**Verification: Controller & Repository Layers**
-- Carefully review Controller layer to understand data flow
-- Examine Repository layer (MyBatis XML, JPA methods) to confirm table/column access
+2-3. Downstream data flow means that data processing occurs as it is passed from top to bottom in the form of upper layer → middle layer → lower layer. In this case, the upper layer becomes the source layer and the lower layer becomes the destination layer. For example, if the data flow is downstream in Spring framework, the source layer is the controller and the destination layer is the mapper or external interface layer. Conversely, if it's upstream, the source layer is the mapper or external interface and the destination is the controller layer. The same approach applies to other frameworks. In Anyframe, if the data flow is downstream, the source layer is service/service implementation and the destination layer is dem/dqm or external interface. Conversely, if it's upstream, the source layer is dem/dqm or external interface layer and the destination layer is service/service implementation.
+
+2-4. To determine whether the data flow processed in the candidate code belongs to downstream or upstream, you must identify the call relationships of the method containing the candidate code and verify the direction in which the data object is being passed. Perform this verification by comprehensively understanding the provided source code. Note that the method call relationships and data flow directions can differ.
+
+Once the data flow of the candidate code is confirmed, perform the modification work according to the following steps:
+
+3-1. If the data flow of the candidate code is downstream, determine whether the destination layer is a database-related layer. If it corresponds to this, proceed with modifications for encryption. If the destination layer is a layer unrelated to the database, no modifications should be made.
+
+3-2. If the data flow of the candidate code is upstream, determine whether the source layer is a database-related layer. If it corresponds to this, proceed with modifications for decryption. If the source layer is a layer unrelated to the database, no modifications should be made.
+
+When getter/setter methods need to be used for source code modification, you must verify the exact names of the required methods. Since getter/setter method names are very likely to be used within the provided source code, you should look for them. If you cannot find where they are used elsewhere, you should infer the most likely getter/setter names from the variable names and use them.
+
+Source code modifications must be performed without duplication within the upper layer or middle layer identified in the above process. For example, in the case of Spring framework, the selection and modification of candidate code should be applied in either the controller layer or the service/service implementation layer, and should not occur redundantly in both layers. Similarly, in the case of Anyframe, it should be applied in either the service/service implementation layer or the business layer, and should not be applied redundantly in both layers.
+
 
 **DO NOT modify:**
 - Code unrelated to the specified tables and columns
@@ -225,4 +225,5 @@ From here, there are actual information and source codes that you have to handle
 2. Only add encryption and decryption code.
 3. The file_path must use the absolute path provided in source_files.
 4. Do NOT perform any linting or formatting changes such as removing comments, trimming whitespace, or reformatting code. Only modify what is strictly necessary for encryption/decryption.
+5. Do not remove or insert carrige return at the end of each source file. It should be as it is.
 

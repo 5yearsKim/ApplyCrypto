@@ -270,6 +270,13 @@ class XMLMapperParser:
 
         # 자식 요소의 텍스트 (동적 SQL 요소는 일단 무시)
         for child in element:
+            # XML 주석은 건너뛰기 (주석 다음의 tail 텍스트는 유지)
+            if isinstance(child, etree._Comment):
+                # 주석 자체는 무시하고, 주석 다음의 tail 텍스트만 처리
+                if child.tail:
+                    text_parts.append(child.tail.strip())
+                continue
+            
             if child.tag in [
                 "if",
                 "choose",
@@ -280,9 +287,11 @@ class XMLMapperParser:
                 "set",
                 "trim",
             ]:
-                # 동적 SQL 요소는 일단 텍스트만 추출
-                if child.text:
-                    text_parts.append(child.text.strip())
+                # 동적 SQL 요소는 재귀적으로 처리하되 주석은 필터링
+                # (동적 SQL 태그 내부에 주석이 있을 수 있으므로)
+                child_text = self._extract_text_content(child)
+                if child_text:
+                    text_parts.append(child_text)
                 if child.tail:
                     text_parts.append(child.tail.strip())
             else:

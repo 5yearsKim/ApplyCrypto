@@ -1,0 +1,46 @@
+{
+  "target_project": "C:\\Users\\swth1\\src\\SliEx",
+  "source_file_types": [
+    ".java",
+    ".xml"
+  ],
+  "sql_wrapping_type": "jdbc",
+  "modification_type": "ControllerOrService",
+  "framework_type": "AnyframeSarangOn",
+  "llm_provider": "watsonx_ai",
+  "generate_full_source": true,
+  "access_tables": [
+    {
+      "table_name": "TBSAD000012",
+      "columns": [
+        {
+          "name": "BKG_IMG_ID",
+          "new_column": false
+        }
+      ]
+    },
+    {
+      "table_name": "TSSF00001",
+      "columns": [
+        {
+          "name": "MOBSL_BLTNP_NM",
+          "new_column": false
+        }
+      ]
+    }
+  ],
+  "exclude_dirs": [
+    "test",
+    "generated",
+    "src/test"
+  ],
+  "exclude_files": [
+    "*Test.java",
+    "*_test.java",
+    "*Test*.java",
+    "log4j.xml",
+    "ehcache.xml",
+    "mybatis-config.xml",
+    "spring-servlet.xml"
+  ]
+}

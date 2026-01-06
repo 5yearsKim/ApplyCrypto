@@ -11,6 +11,8 @@ import logging
 from pathlib import Path
 from typing import Dict, List
 
+from tqdm import tqdm
+
 from config.config_manager import Configuration
 from models.code_generator import CodeGeneratorInput, CodeGeneratorOutput
 from models.modification_context import ModificationContext
@@ -22,7 +24,7 @@ from modifier.llm.llm_provider import LLMProvider
 
 from ..base_code_generator import BaseCodeGenerator
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("applycrypto")
 
 
 class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
@@ -118,17 +120,23 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
             )
 
             # BatchProcessor 초기화
-            batch_processor = BatchProcessor(max_workers=self.config.max_workers)
+            # batch_processor = BatchProcessor(max_workers=self.config.max_workers)
 
             # 병렬 처리 실행
-            plan_batches = batch_processor.process_items_parallel(
-                items=all_batches,
-                process_func=self._generate_batch_plans,
-                desc="파일 수정 계획 생성 중",
-            )
+            # plan_batches = batch_processor.process_items_parallel(
+            #     items=all_batches,
+            #     process_func=self._generate_batch_plans,
+            #     desc="파일 수정 계획 생성 중",
+            # )
 
             # 결과 통합
-            for plan_batch in plan_batches:
+            # for plan_batch in plan_batches:
+            #     if plan_batch:
+            #         plans.extend(plan_batch)
+
+            # 순차 처리: all_batches의 각 item을 순차적으로 처리
+            for batch in tqdm(all_batches, desc="파일 수정 계획 생성 중", unit="batch"):
+                plan_batch = self._generate_batch_plans(batch)
                 if plan_batch:
                     plans.extend(plan_batch)
 
@@ -175,6 +183,11 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
                 extra_variables=extra_vars,
             )
 
+            logger.info("--------------------------------")
+            logger.info("_generate_batch_plans():")
+            for code_snippet in batch:
+                logger.info(f"code_snippet.path: {code_snippet.path}")
+            logger.info("--------------------------------")
             # Code 생성
             code_out = self.generate(input_data)
 

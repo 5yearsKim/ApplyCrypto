@@ -5,6 +5,7 @@ config.json에 설정된 DB 테이블과 칼럼에 접근하는 소스 파일 �
 """
 
 import logging
+import re
 from collections import defaultdict
 from parser.call_graph_builder import CallGraphBuilder
 from parser.java_ast_parser import JavaASTParser
@@ -327,6 +328,22 @@ class DBAccessAnalyzer:
 
             # SQL에서 칼럼 추출
             sql_columns = self.sql_extractor.extract_column_names(sql, table_name)
+            
+            # sql_columns가 비어있고 SELECT * FROM 패턴인 경우 false_columns로 설정
+            if not sql_columns:
+                # SELECT ~ FROM 패턴 확인 (대소문자 무시, 여러 줄 지원)
+                select_from_pattern = r"SELECT\s+(.*?)\s+FROM\s+"
+                select_match = re.search(select_from_pattern, sql, re.IGNORECASE | re.DOTALL)
+                if select_match:
+                    select_clause = select_match.group(1).strip()
+                    # SELECT와 FROM 사이에 *가 포함되어 있는지 확인
+                    if "*" in select_clause:
+                        # FROM 다음 부분 확인 (서브쿼리가 아닌지)
+                        from_after = sql[select_match.end():].strip()
+                        # FROM 다음이 (로 시작하지 않으면
+                        if not from_after.startswith("("):
+                            sql_columns = false_columns.copy()
+            
             sql_columns_lower = {c.lower() for c in sql_columns}
 
             # 규칙 2: new_column=false인 칼럼이 있으면 그 중 하나 이상 사용되는 쿼리만 포함

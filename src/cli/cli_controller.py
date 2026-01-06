@@ -1169,18 +1169,19 @@ class CLIController:
 
     def _print_diff(self, file_path: str, diff: str):
         """Diff 내용을 컬러로 출력 (간단 구현)"""
-        print(f"\n[Diff] {file_path}")
-        print("-" * 80)
-        for line in diff.splitlines():
-            if line.startswith("+"):
-                print(f"\033[92m{line}\033[0m")  # Green
-            elif line.startswith("-"):
-                print(f"\033[91m{line}\033[0m")  # Red
-            elif line.startswith("@@"):
-                print(f"\033[96m{line}\033[0m")  # Cyan
-            else:
-                print(line)
-        print("-" * 80)
+        # print(f"\n[Diff] {file_path}")
+        # print("-" * 80)
+        # for line in diff.splitlines():
+        #     if line.startswith("+"):
+        #         print(f"\033[92m{line}\033[0m")  # Green
+        #     elif line.startswith("-"):
+        #         print(f"\033[91m{line}\033[0m")  # Red
+        #     elif line.startswith("@@"):
+        #         print(f"\033[96m{line}\033[0m")  # Cyan
+        #     else:
+        #         print(line)
+        # print("-" * 80)
+        print(f"\n[수정된 파일] {file_path}")
 
     def _get_user_confirmation(self) -> str:
         """사용자 확인 입력"""
