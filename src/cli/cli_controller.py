@@ -41,6 +41,7 @@ from persistence.data_persistence_manager import (
     DataPersistenceManager,
     PersistenceError,
 )
+from persistence.debug_manager import DebugManager
 
 
 class CLIController:
@@ -159,6 +160,11 @@ class CLIController:
             "--dry-run",
             action="store_true",
             help="실제 파일 수정 없이 미리보기만 수행합니다",
+        )
+        modify_parser.add_argument(
+            "--debug",
+            action="store_true",
+            help="디버그 모드 활성화 (Diff 파일 저장 등)",
         )
 
 
@@ -1195,6 +1201,9 @@ class CLIController:
             # Data Persistence Manager 초기화
             persistence_manager = DataPersistenceManager(target_project)
 
+            # Debug Manager 초기화
+            debug_manager = DebugManager(target_project) if args.debug else None
+
             # 분석 결과 확인 및 로드
             print("  [1/2] 분석 결과 확인 중...")
             try:
@@ -1261,6 +1270,9 @@ class CLIController:
 
                         # 생성된 계획 즉시 적용
                         for plan in context_plans:
+                            # 디버그 모드일 경우 diff 저장
+                            if args.debug and debug_manager:
+                                debug_manager.log_diff(plan)
                             # 적용 (이미 실패/스킵된 계획도 내부적으로 처리됨)
                             res = code_modifier.apply_plan(
                                 plan, dry_run=args.dry_run
