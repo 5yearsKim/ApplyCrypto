@@ -221,7 +221,7 @@ class CLIController:
         # 콘솔 핸들러
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
-        console_formatter = logging.Formatter("%(levelname)s - %(message)s")
+        console_formatter = logging.Formatter("%(message)s")
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)
 
@@ -330,18 +330,18 @@ class CLIController:
             # 삭제 실행
             persistence_manager.clear_all(use_backup=args.backup)
 
-            print("모든 데이터가 삭제되었습니다.")
+            self.logger.info("모든 데이터가 삭제되었습니다.")
             if args.backup:
-                print("백업이 생성되었습니다.")
+                self.logger.info("백업이 생성되었습니다.")
 
             return 0
 
         except ConfigurationError as e:
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
             return 1
         except Exception as e:
             self.logger.exception(f"clear 명령어 실행 중 오류: {e}")
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
             return 1
 
     def _handle_analyze(self, args: argparse.Namespace) -> int:
@@ -360,14 +360,14 @@ class CLIController:
             target_project = Path(config.target_project)
 
             self.logger.info("프로젝트 분석 시작...")
-            print("프로젝트 분석을 시작합니다...")
+            self.logger.info("프로젝트 분석을 시작합니다...")
 
             # Data Persistence Manager 초기화
             persistence_manager = DataPersistenceManager(target_project)
             cache_manager = persistence_manager.cache_manager or CacheManager()
 
             # 1. 소스 파일 수집
-            print("  [1/5] 소스 파일 수집 중...")
+            self.logger.info("  [1/5] 소스 파일 수집 중...")
             self.logger.info("소스 파일 수집 시작")
 
             source_files = []
@@ -380,7 +380,7 @@ class CLIController:
                         SourceFile.from_dict(f) if isinstance(f, dict) else f
                         for f in source_files_data
                     ]
-                    print(
+                    self.logger.info(
                         f"  ✓ 캐시에서 {len(source_files)}개의 소스 파일을 로드했습니다."
                     )
                     self.logger.info(
@@ -392,7 +392,7 @@ class CLIController:
             if not source_files:
                 collector = SourceFileCollector(config)
                 source_files = list[SourceFile](collector.collect())
-                print(f"  ✓ {len(source_files)}개의 소스 파일을 수집했습니다.")
+                self.logger.info(f"  ✓ {len(source_files)}개의 소스 파일을 수집했습니다.")
                 self.logger.info(f"소스 파일 수집 완료: {len(source_files)}개")
 
                 # 소스 파일 저장
@@ -411,7 +411,7 @@ class CLIController:
             java_parser = JavaASTParser(cache_manager=cache_manager)
 
             # 2. Java AST 파싱 및 Call Graph 생성 (파싱 결과 재사용을 위해 먼저 수행)
-            print("  [2/5] Java AST 파싱 및 Call Graph 생성 중...")
+            self.logger.info("  [2/5] Java AST 파싱 및 Call Graph 생성 중...")
             self.logger.info("Java AST 파싱 및 Call Graph 생성 시작")
 
             java_files = [f.path for f in source_files if f.extension == ".java"]
@@ -452,8 +452,8 @@ class CLIController:
                             }
                         )
 
-            print(f"  ✓ {len(java_parse_results)}개의 Java 파일을 파싱했습니다.")
-            print(f"  ✓ {len(endpoints)}개의 엔드포인트를 식별했습니다.")
+            self.logger.info(f"  ✓ {len(java_parse_results)}개의 Java 파일을 파싱했습니다.")
+            self.logger.info(f"  ✓ {len(endpoints)}개의 엔드포인트를 식별했습니다.")
             self.logger.info(
                 f"Java AST 파싱 및 Call Graph 생성 완료: {len(java_parse_results)}개 파일, {len(endpoints)}개 엔드포인트"
             )
@@ -464,7 +464,7 @@ class CLIController:
             )
 
             # 3. SQL 추출
-            print("  [3/5] SQL 추출 중...")
+            self.logger.info("  [3/5] SQL 추출 중...")
             self.logger.info("SQL 추출 시작")
 
             xml_parser = XMLMapperParser()  # Step 5를 위해 필요
@@ -491,7 +491,7 @@ class CLIController:
                         SQLExtractionOutput.from_dict(r) if isinstance(r, dict) else r
                         for r in sql_extraction_data
                     ]
-                    print(
+                    self.logger.info(
                         f"  ✓ 캐시에서 {len(sql_extraction_results)}개의 SQL 추출 결과를 로드했습니다."
                     )
                     self.logger.info(
@@ -504,7 +504,7 @@ class CLIController:
             if not sql_extraction_results:
                 # SQL 추출 실행 (use_llm_parser는 각 Extractor 내부에서 처리)
                 sql_extraction_results = sql_extractor.extract_from_files(source_files)
-                print(
+                self.logger.info(
                     f"  ✓ {len(sql_extraction_results)}개의 파일에서 SQL을 추출했습니다."
                 )
 
@@ -515,7 +515,7 @@ class CLIController:
                 )
 
             total_sql_queries = sum(len(r.sql_queries) for r in sql_extraction_results)
-            print(f"  ✓ 총 {total_sql_queries}개의 SQL 쿼리를 추출했습니다.")
+            self.logger.info(f"  ✓ 총 {total_sql_queries}개의 SQL 쿼리를 추출했습니다.")
             self.logger.info(
                 f"SQL 추출 완료: {len(sql_extraction_results)}개 파일, {total_sql_queries}개 쿼리"
             )
@@ -539,7 +539,7 @@ class CLIController:
             persistence_manager.save_to_file(call_graph_data, "call_graph.json")
 
             # 5. DB 접근 정보 분석
-            print("  [5/5] DB 접근 정보 분석 중...")
+            self.logger.info("  [5/5] DB 접근 정보 분석 중...")
             self.logger.info("DB 접근 정보 분석 시작")
 
             db_analyzer = DBAccessAnalyzer(
@@ -550,7 +550,7 @@ class CLIController:
                 call_graph_builder=call_graph_builder,
             )
             table_access_info_list = db_analyzer.analyze(source_files)
-            print(
+            self.logger.info(
                 f"  ✓ {len(table_access_info_list)}개의 테이블 접근 정보를 분석했습니다."
             )
             self.logger.info(f"DB 접근 정보 분석 완료: {len(table_access_info_list)}개")
@@ -561,21 +561,21 @@ class CLIController:
                 "table_access_info.json",
             )
 
-            print("\n분석이 완료되었습니다.")
-            print(f"  - 수집된 파일: {len(source_files)}개")
-            print(f"  - Java 파일: {len(java_parse_results)}개")
-            print(f"  - SQL 추출 파일: {len(sql_extraction_results)}개")
-            print(f"  - 엔드포인트: {len(endpoints)}개")
-            print(f"  - 테이블 접근 정보: {len(table_access_info_list)}개")
+            self.logger.info("\n분석이 완료되었습니다.")
+            self.logger.info(f"  - 수집된 파일: {len(source_files)}개")
+            self.logger.info(f"  - Java 파일: {len(java_parse_results)}개")
+            self.logger.info(f"  - SQL 추출 파일: {len(sql_extraction_results)}개")
+            self.logger.info(f"  - 엔드포인트: {len(endpoints)}개")
+            self.logger.info(f"  - 테이블 접근 정보: {len(table_access_info_list)}개")
             self.logger.info("프로젝트 분석 완료")
             return 0
 
         except ConfigurationError as e:
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
             return 1
         except Exception as e:
             self.logger.exception(f"analyze 명령어 실행 중 오류: {e}")
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
             return 1
 
     def _handle_list(self, args: argparse.Namespace) -> int:
@@ -594,11 +594,10 @@ class CLIController:
                 args.all or args.db or args.modified or args.endpoint or args.callgraph
             )
             if not has_option:
-                print(
-                    "오류: list 명령어에는 하나 이상의 옵션(--all, --db, --modified, --endpoint, --callgraph)이 필요합니다.",
-                    file=sys.stderr,
+                self.logger.error(
+                    "오류: list 명령어에는 하나 이상의 옵션(--all, --db, --modified, --endpoint, --callgraph)이 필요합니다."
                 )
-                print("도움말을 보려면: applycrypto list --help", file=sys.stderr)
+                self.logger.error("도움말을 보려면: applycrypto list --help")
                 return 1
 
             self.logger.info("정보 조회 시작...")
@@ -630,7 +629,7 @@ class CLIController:
 
         except Exception as e:
             self.logger.exception(f"list 명령어 실행 중 오류: {e}")
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
             return 1
 
     def _list_all_files(
@@ -639,7 +638,7 @@ class CLIController:
         """모든 소스 파일 목록 출력"""
         try:
             if not persistence_manager:
-                print(
+                self.logger.info(
                     "분석 결과를 찾을 수 없습니다. 먼저 'analyze' 명령어를 실행하세요."
                 )
                 return
@@ -648,7 +647,7 @@ class CLIController:
                 "source_files.json", SourceFile
             )
             if not source_files_data:
-                print("수집된 소스 파일이 없습니다.")
+                self.logger.info("수집된 소스 파일이 없습니다.")
                 return
 
             source_files = [
@@ -670,8 +669,8 @@ class CLIController:
                 )
 
             if tabulate:
-                print("\n모든 소스 파일 목록:")
-                print(
+                self.logger.info("\n모든 소스 파일 목록:")
+                self.logger.info(
                     tabulate(
                         table_data,
                         headers=["파일명", "경로", "크기", "수정 시간", "확장자"],
@@ -679,17 +678,17 @@ class CLIController:
                     )
                 )
             else:
-                print("\n모든 소스 파일 목록:")
+                self.logger.info("\n모든 소스 파일 목록:")
                 for row in table_data:
-                    print(f"  {row[0]} ({row[1]})")
+                    self.logger.info(f"  {row[0]} ({row[1]})")
 
-            print(f"\n총 {len(source_files)}개의 파일")
+            self.logger.info(f"\n총 {len(source_files)}개의 파일")
 
         except PersistenceError as e:
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
         except Exception as e:
             self.logger.exception(f"파일 목록 조회 중 오류: {e}")
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
 
     def _list_db_access(
         self, persistence_manager: Optional[DataPersistenceManager]
@@ -697,7 +696,7 @@ class CLIController:
         """테이블별 접근 파일 목록 출력"""
         try:
             if not persistence_manager:
-                print(
+                self.logger.info(
                     "분석 결과를 찾을 수 없습니다. 먼저 'analyze' 명령어를 실행하세요."
                 )
                 return
@@ -706,7 +705,7 @@ class CLIController:
                 "table_access_info.json", TableAccessInfo
             )
             if not table_access_data:
-                print("테이블 접근 정보가 없습니다.")
+                self.logger.info("테이블 접근 정보가 없습니다.")
                 return
 
             table_access_list = [
@@ -734,8 +733,8 @@ class CLIController:
                 )
 
             if tabulate:
-                print("\n테이블별 접근 파일 목록:")
-                print(
+                self.logger.info("\n테이블별 접근 파일 목록:")
+                self.logger.info(
                     tabulate(
                         table_data,
                         headers=[
@@ -749,38 +748,38 @@ class CLIController:
                     )
                 )
             else:
-                print("\n테이블별 접근 파일 목록:")
+                self.logger.info("\n테이블별 접근 파일 목록:")
                 for row in table_data:
-                    print(f"  {row[0]}: {row[1]}개 파일")
+                    self.logger.info(f"  {row[0]}: {row[1]}개 파일")
 
             # 테이블별 접근 파일 경로 상세 출력
-            print("\n" + "=" * 80)
-            print("테이블별 접근 파일 경로 상세:")
-            print("=" * 80)
+            self.logger.info("\n" + "=" * 80)
+            self.logger.info("테이블별 접근 파일 경로 상세:")
+            self.logger.info("=" * 80)
             for info in table_access_list:
-                print(f"\n테이블: {info.table_name} ({len(info.access_files)}개 파일)")
-                print(f"  레이어: {info.layer}")
-                print(f"  쿼리 타입: {info.query_type}")
+                self.logger.info(f"\n테이블: {info.table_name} ({len(info.access_files)}개 파일)")
+                self.logger.info(f"  레이어: {info.layer}")
+                self.logger.info(f"  쿼리 타입: {info.query_type}")
                 # columns는 이제 객체 배열이므로 이름만 추출
                 column_names = [
                     col.get("name", col) if isinstance(col, dict) else col
                     for col in info.columns
                 ]
-                print(f"  칼럼: {', '.join(column_names) if column_names else 'N/A'}")
-                print("  접근 파일:")
+                self.logger.info(f"  칼럼: {', '.join(column_names) if column_names else 'N/A'}")
+                self.logger.info("  접근 파일:")
                 if info.access_files:
                     for file_path in info.access_files:
-                        print(f"    - {file_path}")
+                        self.logger.info(f"    - {file_path}")
                 else:
-                    print("    (접근 파일 없음)")
+                    self.logger.info("    (접근 파일 없음)")
 
-            print(f"\n총 {len(table_access_list)}개의 테이블")
+            self.logger.info(f"\n총 {len(table_access_list)}개의 테이블")
 
         except PersistenceError as e:
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
         except Exception as e:
             self.logger.exception(f"DB 접근 정보 조회 중 오류: {e}")
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
 
     def _list_modified_files(
         self, persistence_manager: Optional[DataPersistenceManager]
@@ -799,11 +798,11 @@ class CLIController:
                     "modification_records.json", ModificationRecord
                 )
             except PersistenceError:
-                print("수정된 파일이 없습니다.")
+                self.logger.info("수정된 파일이 없습니다.")
                 return
 
             if not modified_data:
-                print("수정된 파일이 없습니다.")
+                self.logger.info("수정된 파일이 없습니다.")
                 return
 
             modified_records = [
@@ -826,8 +825,8 @@ class CLIController:
                 )
 
             if tabulate:
-                print("\n수정된 파일 목록:")
-                print(
+                self.logger.info("\n수정된 파일 목록:")
+                self.logger.info(
                     tabulate(
                         table_data,
                         headers=[
@@ -842,17 +841,17 @@ class CLIController:
                     )
                 )
             else:
-                print("\n수정된 파일 목록:")
+                self.logger.info("\n수정된 파일 목록:")
                 for row in table_data:
-                    print(f"  {row[0]} ({row[1]}.{row[2]}) - {row[3]}개 메서드")
+                    self.logger.info(f"  {row[0]} ({row[1]}.{row[2]}) - {row[3]}개 메서드")
 
-            print(f"\n총 {len(modified_records)}개의 수정 기록")
+            self.logger.info(f"\n총 {len(modified_records)}개의 수정 기록")
 
         except PersistenceError as e:
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
         except Exception as e:
             self.logger.exception(f"수정 파일 목록 조회 중 오류: {e}")
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
 
     def _list_endpoints(
         self, persistence_manager: Optional[DataPersistenceManager]
@@ -860,19 +859,19 @@ class CLIController:
         """REST API 엔드포인트 목록 출력"""
         try:
             if not persistence_manager:
-                print(
+                self.logger.info(
                     "분석 결과를 찾을 수 없습니다. 먼저 'analyze' 명령어를 실행하세요."
                 )
                 return
 
             call_graph_data = persistence_manager.load_from_file("call_graph.json")
             if not call_graph_data or "endpoints" not in call_graph_data:
-                print("엔드포인트 정보가 없습니다.")
+                self.logger.info("엔드포인트 정보가 없습니다.")
                 return
 
             endpoints = call_graph_data["endpoints"]
             if not endpoints:
-                print("엔드포인트가 없습니다.")
+                self.logger.info("엔드포인트가 없습니다.")
                 return
 
             # Endpoint 객체로 변환
@@ -887,7 +886,7 @@ class CLIController:
                     continue
 
             if not endpoint_objects:
-                print("유효한 엔드포인트가 없습니다.")
+                self.logger.info("유효한 엔드포인트가 없습니다.")
                 return
 
             # 테이블 데이터 준비
@@ -898,8 +897,8 @@ class CLIController:
                 )
 
             if tabulate:
-                print("\nREST API 엔드포인트 목록:")
-                print(
+                self.logger.info("\nREST API 엔드포인트 목록:")
+                self.logger.info(
                     tabulate(
                         table_data,
                         headers=["HTTP 메서드", "경로", "메서드 시그니처", "클래스명"],
@@ -907,19 +906,19 @@ class CLIController:
                     )
                 )
             else:
-                print("\nREST API 엔드포인트 목록:")
+                self.logger.info("\nREST API 엔드포인트 목록:")
                 for row in table_data:
-                    print(f"  {row[0]} {row[1]} -> {row[2]} ({row[3]})")
+                    self.logger.info(f"  {row[0]} {row[1]} -> {row[2]} ({row[3]})")
 
-            print(f"\n총 {len(endpoint_objects)}개의 엔드포인트")
-            print("\n호출 그래프를 보려면: list --callgraph <method_signature>")
-            print("예시: list --callgraph EmpController.login")
+            self.logger.info(f"\n총 {len(endpoint_objects)}개의 엔드포인트")
+            self.logger.info("\n호출 그래프를 보려면: list --callgraph <method_signature>")
+            self.logger.info("예시: list --callgraph EmpController.login")
 
         except PersistenceError as e:
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
         except Exception as e:
             self.logger.exception(f"엔드포인트 목록 조회 중 오류: {e}")
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
 
     def _list_callgraph(
         self, endpoint: str, persistence_manager: Optional[DataPersistenceManager]
@@ -927,7 +926,7 @@ class CLIController:
         """특정 엔드포인트의 호출 그래프 출력"""
         try:
             if not persistence_manager:
-                print(
+                self.logger.info(
                     "분석 결과를 찾을 수 없습니다. 먼저 'analyze' 명령어를 실행하세요."
                 )
                 return
@@ -935,7 +934,7 @@ class CLIController:
             # Call Graph 데이터 로드
             call_graph_data = persistence_manager.load_from_file("call_graph.json")
             if not call_graph_data:
-                print("Call Graph 데이터가 없습니다.")
+                self.logger.info("Call Graph 데이터가 없습니다.")
                 return
 
             # 엔드포인트 찾기
@@ -1015,7 +1014,7 @@ class CLIController:
                         call_graph_builder.build_call_graph(java_files)
                     except Exception as e2:
                         self.logger.error(f"Call Graph 재생성도 실패: {e2}")
-                        print(
+                        self.logger.error(
                             f"오류: Call Graph를 복원하거나 재생성할 수 없습니다: {e2}"
                         )
                         return
@@ -1023,22 +1022,22 @@ class CLIController:
                 self.logger.warning(
                     "call_trees가 없어 Call Graph를 복원할 수 없습니다."
                 )
-                print("오류: Call Graph 데이터에 call_trees가 없습니다.")
+                self.logger.error("오류: Call Graph 데이터에 call_trees가 없습니다.")
                 return
 
             # 엔드포인트를 찾은 경우
             if target_endpoint_obj:
-                print(
+                self.logger.info(
                     f"\n엔드포인트 '{target_endpoint_obj.method_signature}'의 호출 그래프:"
                 )
-                print("=" * 60)
+                self.logger.info("=" * 60)
                 # print_call_tree는 Endpoint 객체를 받음
                 call_graph_builder.print_call_tree(
                     target_endpoint_obj, show_layers=True, max_depth=100
                 )
             else:
                 # 엔드포인트를 찾지 못한 경우, method로 판단하여 모든 call tree에서 검색
-                print(
+                self.logger.info(
                     f"엔드포인트 '{endpoint}'를 찾을 수 없습니다. 메서드로 검색합니다..."
                 )
 
@@ -1081,20 +1080,20 @@ class CLIController:
                         if find_method_in_tree(tree, endpoint):
                             matching_trees.append(tree)
                 if matching_trees:
-                    print(
+                    self.logger.info(
                         f"\n메서드 '{endpoint}'가 사용되는 {len(matching_trees)}개의 호출 그래프를 찾았습니다:"
                     )
-                    print("=" * 60)
+                    self.logger.info("=" * 60)
                     for idx, tree in enumerate(matching_trees, 1):
                         endpoint_info = tree.get("endpoint", {})
                         endpoint_method = endpoint_info.get("method_signature", "")
                         endpoint_path = endpoint_info.get("path", "")
                         endpoint_http = endpoint_info.get("http_method", "")
-                        print(
+                        self.logger.info(
                             f"\n[{idx}/{len(matching_trees)}] 엔드포인트: {endpoint_http} {endpoint_path}"
                         )
-                        print(f"Method: {endpoint_method}")
-                        print("-" * 60)
+                        self.logger.info(f"Method: {endpoint_method}")
+                        self.logger.info("-" * 60)
                         # 트리를 출력하기 위해 해당 endpoint로 call_graph에서 출력
                         if endpoint_method:
                             # endpoint 객체 찾기
@@ -1116,25 +1115,25 @@ class CLIController:
                                     tree, target_method=endpoint, indent=0
                                 )
                 else:
-                    print(
+                    self.logger.info(
                         f"메서드 '{endpoint}'를 사용하는 호출 그래프를 찾을 수 없습니다."
                     )
-                    print("\n사용 가능한 엔드포인트 (method_signature 형식):")
+                    self.logger.info("\n사용 가능한 엔드포인트 (method_signature 형식):")
                     for ep in endpoint_objects[:10]:  # 처음 10개 표시
-                        print(f"  - {ep.method_signature}")
+                        self.logger.info(f"  - {ep.method_signature}")
                     if len(endpoint_objects) > 10:
-                        print(f"  ... 외 {len(endpoint_objects) - 10}개")
-                    print("\n사용법: list --callgraph <endpoint_or_method>")
-                    print("예시: list --callgraph EmpController.login  (엔드포인트)")
-                    print(
+                        self.logger.info(f"  ... 외 {len(endpoint_objects) - 10}개")
+                    self.logger.info("\n사용법: list --callgraph <endpoint_or_method>")
+                    self.logger.info("예시: list --callgraph EmpController.login  (엔드포인트)")
+                    self.logger.info(
                         "     list --callgraph getEmpsByPage  (메서드, 부분 매칭 가능)"
                     )
 
         except PersistenceError as e:
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
         except Exception as e:
             self.logger.exception(f"호출 그래프 조회 중 오류: {e}")
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
 
     def _print_tree_structure(
         self,
@@ -1161,7 +1160,7 @@ class CLIController:
             marker = "└─ " if is_last else "├─ "
             circular_marker = " (recursive/circular)" if is_circular else ""
             highlight = " >>> " if target_method in method_sig else ""
-            print(f"{prefix}{marker}{method_sig} [{layer}]{highlight}{circular_marker}")
+            self.logger.info(f"{prefix}{marker}{method_sig} [{layer}]{highlight}{circular_marker}")
         # 자식 노드 출력
         children = tree.get("children", [])
         for i, child in enumerate(children):
@@ -1196,7 +1195,7 @@ class CLIController:
 
             mode = "미리보기" if args.dry_run else "실제 수정"
             self.logger.info(f"파일 수정 시작 (모드: {mode})...")
-            print(f"파일 수정을 시작합니다 (모드: {mode})...")
+            self.logger.info(f"파일 수정을 시작합니다 (모드: {mode})...")
 
             # Data Persistence Manager 초기화
             persistence_manager = DataPersistenceManager(target_project)
@@ -1205,13 +1204,13 @@ class CLIController:
             debug_manager = DebugManager(target_project) if args.debug else None
 
             # 분석 결과 확인 및 로드
-            print("  [1/2] 분석 결과 확인 중...")
+            self.logger.info("  [1/2] 분석 결과 확인 중...")
             try:
                 table_access_info_data = persistence_manager.load_from_file(
                     "table_access_info.json", TableAccessInfo
                 )
                 if not table_access_info_data:
-                    print(
+                    self.logger.info(
                         "  오류: 테이블 접근 정보를 찾을 수 없습니다. 먼저 'analyze' 명령어를 실행하세요."
                     )
                     return 1
@@ -1224,30 +1223,30 @@ class CLIController:
                         table_access_info_list.append(info)
 
                 if not table_access_info_list:
-                    print("  수정할 테이블 접근 정보가 없습니다.")
+                    self.logger.info("  수정할 테이블 접근 정보가 없습니다.")
                     return 0
 
-                print(
+                self.logger.info(
                     f"  ✓ {len(table_access_info_list)}개의 테이블 접근 정보를 로드했습니다."
                 )
 
             except PersistenceError:
-                print(
+                self.logger.error(
                     "  오류: 테이블 접근 정보를 찾을 수 없습니다. 먼저 'analyze' 명령어를 실행하세요."
                 )
                 return 1
 
             # CodeModifier 초기화
             code_modifier = CodeModifier(config=config)
-
-            print("  [2/2] 수정 계획 생성 및 적용 중...")
+            
+            self.logger.info("  [2/2] 수정 계획 생성 및 적용 중...")
 
             total_success = 0
             total_failed = 0
             total_skipped = 0
 
             for table_info in table_access_info_list:
-                print(f"\n  테이블 '{table_info.table_name}' 처리 중...")
+                self.logger.info(f"\n  테이블 '{table_info.table_name}' 처리 중...")
 
                 # 트래킹 시작 (테이블 단위)
                 code_modifier.result_tracker.start_tracking()
@@ -1257,7 +1256,7 @@ class CLIController:
                 # 1. 컨텍스트 생성
                 contexts = code_modifier.generate_contexts(table_info)
                 if not contexts:
-                    print(f"    ✗ 테이블 '{table_info.table_name}' 컨텍스트 생성 실패 (결과 없음)")
+                    self.logger.info(f"    ✗ 테이블 '{table_info.table_name}' 컨텍스트 생성 실패 (결과 없음)")
                     continue
 
                 # 2. 계획 생성 및 적용
@@ -1281,19 +1280,19 @@ class CLIController:
 
                             status = res.get("status")
                             if status == "success":
-                                print(f"  -> 적용 완료: {Path(plan.file_path).name}")
+                                self.logger.info(f"  -> 적용 완료: {Path(plan.file_path).name}")
                                 total_success += 1
                             elif status == "skipped":
                                 total_skipped += 1
                             elif status == "failed":
                                 # 이미 실패 상태로 넘어온 경우 출력 생략 혹은 간단히 출력
                                 if plan.status != "failed": 
-                                    print(f"  -> 실패: {res.get('error')}")
+                                    self.logger.error(f"  -> 실패: {res.get('error')}")
                                 total_failed += 1
 
                     except Exception as e:
                         self.logger.error(f"파일 처리 중 오류: {e}")
-                        print(f"    ✗ 파일 처리 중 오류: {e}")
+                        self.logger.error(f"    ✗ 파일 처리 중 오류: {e}")
                         total_failed += 1
                         continue
 
@@ -1316,22 +1315,22 @@ class CLIController:
             )
 
             # 통계 출력
-            print("\n모든 작업이 완료되었습니다.")
-            print(f"  - 성공: {total_success}개")
-            print(f"  - 실패: {total_failed}개")
-            print(f"  - 건너뜀: {total_skipped}개")
+            self.logger.info("\n모든 작업이 완료되었습니다.")
+            self.logger.info(f"  - 성공: {total_success}개")
+            self.logger.info(f"  - 실패: {total_failed}개")
+            self.logger.info(f"  - 건너뜀: {total_skipped}개")
 
             if args.dry_run:
-                print("\n[미리보기 모드] 실제 파일은 수정되지 않았습니다.")
+                self.logger.info("\n[미리보기 모드] 실제 파일은 수정되지 않았습니다.")
 
             return 0
 
         except ConfigurationError as e:
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
             return 1
         except Exception as e:
             self.logger.exception(f"modify 명령어 실행 중 오류: {e}")
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
             return 1
 
     def _handle_modify_with_type_handler(
@@ -1360,14 +1359,13 @@ class CLIController:
 
         except ImportError as e:
             self.logger.error(f"Type Handler Generator 모듈을 로드할 수 없습니다: {e}")
-            print(
-                f"오류: Type Handler Generator 모듈을 로드할 수 없습니다: {e}",
-                file=sys.stderr,
+            self.logger.error(
+                f"오류: Type Handler Generator 모듈을 로드할 수 없습니다: {e}"
             )
             return 1
         except Exception as e:
             self.logger.exception(f"Type Handler 수정 중 오류: {e}")
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
             return 1
 
     def _handle_modify_with_call_chain(
@@ -1394,20 +1392,20 @@ class CLIController:
 
             mode = "미리보기" if args.dry_run else "실제 수정"
             self.logger.info(f"Call Chain 모드로 파일 수정 시작 (모드: {mode})...")
-            print(f"Call Chain 모드로 파일 수정을 시작합니다 (모드: {mode})...")
+            self.logger.info(f"Call Chain 모드로 파일 수정을 시작합니다 (모드: {mode})...")
 
             # Data Persistence Manager 초기화
             persistence_manager = DataPersistenceManager(target_project)
 
             # 분석 결과 확인 및 로드
-            print("  [1/3] 분석 결과 확인 중...")
+            self.logger.info("  [1/3] 분석 결과 확인 중...")
             try:
                 # table_access_info 로드
                 table_access_info_data = persistence_manager.load_from_file(
                     "table_access_info.json", TableAccessInfo
                 )
                 if not table_access_info_data:
-                    print(
+                    self.logger.error(
                         "  오류: 테이블 접근 정보를 찾을 수 없습니다. 먼저 'analyze' 명령어를 실행하세요."
                     )
                     return 1
@@ -1420,37 +1418,37 @@ class CLIController:
                         table_access_info_list.append(info)
 
                 if not table_access_info_list:
-                    print("  수정할 테이블 접근 정보가 없습니다.")
+                    self.logger.info("  수정할 테이블 접근 정보가 없습니다.")
                     return 0
 
-                print(
+                self.logger.info(
                     f"  ✓ {len(table_access_info_list)}개의 테이블 접근 정보를 로드했습니다."
                 )
 
                 # call_graph 로드
                 call_graph_data = persistence_manager.load_from_file("call_graph.json")
                 if not call_graph_data:
-                    print(
+                    self.logger.error(
                         "  오류: Call Graph 정보를 찾을 수 없습니다. 먼저 'analyze' 명령어를 실행하세요."
                     )
                     return 1
 
-                print(
+                self.logger.info(
                     f"  ✓ Call Graph 로드 완료 (엔드포인트: {len(call_graph_data.get('endpoints', []))}개)"
                 )
 
             except PersistenceError as e:
-                print(f"  오류: 분석 결과를 로드할 수 없습니다: {e}")
+                self.logger.error(f"  오류: 분석 결과를 로드할 수 없습니다: {e}")
                 return 1
 
             # CallChainProcessor 초기화
-            print("  [2/3] Call Chain Processor 초기화 중...")
+            self.logger.info("  [2/3] Call Chain Processor 초기화 중...")
             processor = CallChainProcessor(
                 config=config, project_root=Path(target_project)
             )
 
             # 처리 실행
-            print("  [3/3] Call Chain 처리 중...")
+            self.logger.info("  [3/3] Call Chain 처리 중...")
             result = processor.process_all(
                 table_access_info_list=table_access_info_list,
                 call_graph_data=call_graph_data,
@@ -1461,29 +1459,28 @@ class CLIController:
             # 결과 출력
             if result.get("success"):
                 stats = result.get("statistics", {})
-                print("\n모든 작업이 완료되었습니다.")
-                print(f"  - 총 체인 수: {stats.get('total_chains', 0)}개")
-                print(f"  - 처리된 체인: {stats.get('processed_chains', 0)}개")
-                print(f"  - 성공: {stats.get('success', 0)}개")
-                print(f"  - 실패: {stats.get('failed', 0)}개")
-                print(f"  - 스킵: {stats.get('skipped', 0)}개")
+                self.logger.info("\n모든 작업이 완료되었습니다.")
+                self.logger.info(f"  - 총 체인 수: {stats.get('total_chains', 0)}개")
+                self.logger.info(f"  - 처리된 체인: {stats.get('processed_chains', 0)}개")
+                self.logger.info(f"  - 성공: {stats.get('success', 0)}개")
+                self.logger.info(f"  - 실패: {stats.get('failed', 0)}개")
+                self.logger.info(f"  - 스킵: {stats.get('skipped', 0)}개")
 
                 if args.dry_run:
-                    print("\n[미리보기 모드] 실제 파일은 수정되지 않았습니다.")
+                    self.logger.info("\n[미리보기 모드] 실제 파일은 수정되지 않았습니다.")
 
                 return 0
             else:
-                print(f"\n오류: {result.get('error', '알 수 없는 오류')}")
+                self.logger.error(f"\n오류: {result.get('error', '알 수 없는 오류')}")
                 return 1
 
         except ImportError as e:
             self.logger.error(f"Call Chain Processor 모듈을 로드할 수 없습니다: {e}")
-            print(
-                f"오류: Call Chain Processor 모듈을 로드할 수 없습니다: {e}",
-                file=sys.stderr,
+            self.logger.error(
+                f"오류: Call Chain Processor 모듈을 로드할 수 없습니다: {e}"
             )
             return 1
         except Exception as e:
             self.logger.exception(f"Call Chain 수정 중 오류: {e}")
-            print(f"오류: {e}", file=sys.stderr)
+            self.logger.error(f"오류: {e}")
             return 1
