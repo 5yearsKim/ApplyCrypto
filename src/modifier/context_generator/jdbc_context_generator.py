@@ -2,8 +2,8 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Set
 
-from models.modification_context import CodeSnippet, ModificationContext
-from models.table_access_info import TableAccessInfo
+from models.modification_context import ModificationContext
+
 
 from modifier.context_generator.base_context_generator import BaseContextGenerator
 
@@ -18,13 +18,17 @@ class JdbcContextGenerator(BaseContextGenerator):
 
     def generate(
         self,
-        table_access_info: TableAccessInfo,
+        layer_files: Dict[str, List[str]],
+        table_name: str,
+        columns: List[Dict],
     ) -> List[ModificationContext]:
         """
         Generates modification contexts with JDBC-specific grouping logic.
 
         Args:
-            table_access_info: Table access information.
+            layer_files: Dictionary of layer names and file paths.
+            table_name: Table name.
+            columns: List of columns.
 
         Returns:
             List[ModificationContext]: The generated batches of contexts.
@@ -32,7 +36,6 @@ class JdbcContextGenerator(BaseContextGenerator):
         all_batches: List[ModificationContext] = []
         project_root = Path(self._config.target_project)
 
-        layer_files = table_access_info.layer_files
         
         # 1. Identify files for 'biz' and 'svc' layers
         target_layers = {"biz", "svc"}
@@ -97,13 +100,12 @@ class JdbcContextGenerator(BaseContextGenerator):
             file_paths = list(file_paths_set)
             logger.info(f"Preparing plan generation for keyword group '{keyword}': {len(file_paths)} files")
             
-            code_snippets = self._read_files(file_paths, project_root)
-            
             # Create batches for this keyword group
             # We use the keyword as the 'layer' name in the context so it's identifiable
             batches = self.create_batches(
-                code_snippets=code_snippets,
-                table_access_info=table_access_info,
+                file_paths=file_paths,
+                table_name=table_name,
+                columns=columns,
                 layer=keyword, 
             )
             all_batches.extend(batches)
@@ -111,10 +113,10 @@ class JdbcContextGenerator(BaseContextGenerator):
         # 3. Process Other Layers
         for layer_name, file_paths in other_files.items():
              logger.info(f"Preparing plan generation for layer '{layer_name}': {len(file_paths)} files")
-             code_snippets = self._read_files(file_paths, project_root)
              batches = self.create_batches(
-                code_snippets=code_snippets,
-                table_access_info=table_access_info,
+                file_paths=file_paths,
+                table_name=table_name,
+                columns=columns,
                 layer=layer_name,
              )
              all_batches.extend(batches)

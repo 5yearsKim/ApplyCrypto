@@ -12,7 +12,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Set
 
 from config.config_manager import Configuration
 from models.diff_generator import DiffGeneratorInput
-from models.modification_context import CodeSnippet
+
 from models.table_access_info import TableAccessInfo
 
 # from .diff_generator.call_chain import CallChainDiffGenerator  # TODO: call_chain은 향후 code_generator로 이동 예정
@@ -80,7 +80,7 @@ class CallChainProcessor:
 
         # 컴포넌트 초기화
         self.error_handler = ErrorHandler(max_retries=config.max_retries)
-        self.result_tracker = ResultTracker()
+        self.result_tracker = ResultTracker(self.project_root)
 
         # 처리 완료된 파일 조합 추적 (단일 실행 내에서만)
         self.processed_combinations: Set[FrozenSet[str]] = set()
@@ -591,8 +591,8 @@ class CallChainProcessor:
         """
         results = []
 
-        # 파일 내용 읽기 → CodeSnippet 객체로 변환
-        code_snippets = []
+        # 파일 내용 읽기 → file_paths 수집
+        file_paths: List[str] = []
         files_with_content = []  # 호환성을 위해 유지
         for file_path in sorted(chain_files):
             try:
@@ -600,7 +600,7 @@ class CallChainProcessor:
                 if path.exists():
                     with open(path, "r", encoding="utf-8") as f:
                         content = f.read()
-                    code_snippets.append(CodeSnippet(path=str(path), content=content))
+                    file_paths.append(str(path))
                     files_with_content.append(
                         {
                             "path": str(path),
@@ -612,19 +612,19 @@ class CallChainProcessor:
             except Exception as e:
                 logger.error(f"파일 읽기 실패: {file_path} - {e}")
 
-        if not code_snippets:
+        if not file_paths:
             logger.warning("처리할 파일이 없습니다.")
             return results
 
         # 파일 목록 문자열 생성
-        file_list = ", ".join([Path(f.path).name for f in code_snippets])
+        file_list = ", ".join([Path(p).name for p in file_paths])
 
         # 테이블/칼럼 정보를 텍스트로 포맷팅
         table_info_text = self._format_table_column_info(table_column_info)
 
         # DiffGeneratorInput 생성
         diff_input = DiffGeneratorInput(
-            code_snippets=code_snippets,
+            file_paths=file_paths,
             table_info=table_info_text,
             layer_name="CallChain",
             extra_variables={"file_list": file_list},

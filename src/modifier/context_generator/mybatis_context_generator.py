@@ -7,7 +7,7 @@ from collections import defaultdict
 
 from modifier.context_generator.base_context_generator import BaseContextGenerator
 from models.modification_context import ModificationContext
-from models.table_access_info import TableAccessInfo
+
 
 logger = logging.getLogger("applycrypto.context_generator")
 
@@ -22,13 +22,17 @@ class MybatisContextGenerator(BaseContextGenerator):
 
     def generate(
         self,
-        table_access_info: TableAccessInfo,
+        layer_files: Dict[str, List[str]],
+        table_name: str,
+        columns: List[Dict],
     ) -> List[ModificationContext]:
         """
         Generates modification contexts based on Mybatis naming conventions.
 
         Args:
-            table_access_info: Table access information.
+            layer_files: Dictionary of layer names and file paths.
+            table_name: Table name.
+            columns: List of columns.
 
         Returns:
             List[ModificationContext]: The generated batches of contexts.
@@ -38,8 +42,8 @@ class MybatisContextGenerator(BaseContextGenerator):
 
         # 1. Flatten all files from all layers
         all_file_paths = set()
-        if table_access_info.layer_files:
-            for paths in table_access_info.layer_files.values():
+        if layer_files:
+            for paths in layer_files.values():
                 if paths:
                     all_file_paths.update(paths)
 
@@ -80,15 +84,11 @@ class MybatisContextGenerator(BaseContextGenerator):
             if not paths:
                 continue
 
-            code_snippets = self._read_files(paths, project_root)
-            
-            if not code_snippets:
-                continue
-
             # Create batches using the entity name as the layer name
             batches = self.create_batches(
-                code_snippets=code_snippets,
-                table_access_info=table_access_info,
+                file_paths=paths,
+                table_name=table_name,
+                columns=columns,
                 layer=name 
             )
             all_batches.extend(batches)

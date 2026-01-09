@@ -1,10 +1,8 @@
 import logging
 from pathlib import Path
-from typing import List
-
-from models.modification_context import ModificationContext
-from models.table_access_info import TableAccessInfo
+from typing import List, Dict
 from modifier.context_generator.base_context_generator import BaseContextGenerator
+from models.modification_context import ModificationContext
 
 logger = logging.getLogger("applycrypto.per_layer_context_generator")
 
@@ -19,13 +17,17 @@ class PerLayerContextGenerator(BaseContextGenerator):
 
     def generate(
         self,
-        table_access_info: TableAccessInfo,
+        layer_files: Dict[str, List[str]],
+        table_name: str,
+        columns: List[Dict],
     ) -> List[ModificationContext]:
         """
         Generates modification contexts. Failed files are logged.
 
         Args:
-            table_access_info: Table access information containing file paths.
+            layer_files: Dictionary of layer names and file paths.
+            table_name: Table name.
+            columns: List of columns.
 
         Returns:
             List[ModificationContext]: The generated batches of contexts.
@@ -34,7 +36,7 @@ class PerLayerContextGenerator(BaseContextGenerator):
         project_root = Path(self._config.target_project)
 
         # Layer-wise file grouping
-        layer_files = table_access_info.layer_files
+        # layer_files is passed as argument
 
         for layer_name, file_paths in layer_files.items():
             if not file_paths:
@@ -44,12 +46,11 @@ class PerLayerContextGenerator(BaseContextGenerator):
                 f"Preparing plan generation for layer '{layer_name}': {len(file_paths)} files"
             )
 
-            code_snippets = self._read_files(file_paths, project_root)
-
             # Create batches considering token limits
             modification_context_batches = self.create_batches(
-                code_snippets=code_snippets,
-                table_access_info=table_access_info,
+                file_paths=file_paths,
+                table_name=table_name,
+                columns=columns,
                 layer=layer_name,
             )
 

@@ -107,7 +107,12 @@ public class UserDAO {
 
         # 5. 수정 계획 생성 실행
         print(f"\n[{table_info.table_name}] 테이블에 대한 수정 계획 생성 중...")
-        plans = modifier.generate_modification_plans(table_info)
+        contexts = modifier.generate_contexts(table_info)
+        plans = []
+        for context in contexts:
+            context_plans = modifier.generate_plan(context)
+            if context_plans:
+                plans.extend(context_plans)
 
         # 6. 결과 검증 및 출력
         print("\n" + "=" * 60)

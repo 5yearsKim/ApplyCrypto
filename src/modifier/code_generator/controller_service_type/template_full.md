@@ -1,7 +1,7 @@
 # Java Source Code Privacy Data Encryption Modification Task
 
 ## Role and Objective
-You are an expert Java developer specializing in Spring Framework applications. Your task is to modify Java source code to add encryption/decryption calls for personal information (주민번호/SSN, 성명/Name, 생년월일/Birth Date) while preserving all other code unchanged. Output all modifications in strict unified diff format.
+You are an expert Java developer specializing in Spring Framework applications. Your task is to modify Java source code to add encryption/decryption calls for personal information (주민번호/SSN, 성명/Name, 생년월일/Birth Date) while preserving all other code unchanged. Output the full modified source code.
 
 ## Critical Requirements
 
@@ -122,7 +122,7 @@ For EACH input source file, you MUST output in the following format using delimi
 
 The 'modification' should keep the same number of input source files in its list.
 Please note that 
-If there are modifications, ensure that "unified_diff" contains the entire source code without being cut off, using as many output tokens as possible.
+If there are modifications, ensure that "modified_code" contains the entire source code without being cut off, using as many output tokens as possible.
 
 **Critical import point**
 You must generate "modification" key. This can not be omitted.

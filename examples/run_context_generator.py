@@ -67,7 +67,10 @@ def main():
     for col in first_table.columns:
         if isinstance(col, str):
             target_columns.append({"name": col, "new_column": False})
+        elif hasattr(col, "model_dump"):
+            target_columns.append(col.model_dump())
         elif hasattr(col, "dict"):
+             # Fallback for older pydantic versions or if model_dump is not found
             target_columns.append(col.dict())
         elif isinstance(col, dict):
             target_columns.append(col)
@@ -147,7 +150,9 @@ def main():
 
         # Generate batches
         batches = context_generator.generate(
-            table_access_info=table_info,
+            layer_files=table_info.layer_files,
+            table_name=table_info.table_name,
+            columns=table_info.columns,
         )
 
         print("\n" + "=" * 50)
@@ -161,8 +166,8 @@ def main():
             print(f"  Layer: {batch.layer}")
             print(f"  File Count: {batch.file_count}")
             print("  Files:")
-            for snippet in batch.code_snippets:
-                print(f"    - {snippet.path} (Length: {len(snippet.content)})")
+            for file_path in batch.file_paths:
+                print(f"    - {file_path}")
 
             serialized_batches.append(asdict(batch))
 

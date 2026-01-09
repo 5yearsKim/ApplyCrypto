@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List
 
-from tqdm import tqdm
+
 
 from config.config_manager import Configuration
 from models.code_generator import CodeGeneratorInput, CodeGeneratorOutput
@@ -19,7 +19,6 @@ from models.modification_context import ModificationContext
 from models.modification_plan import ModificationPlan
 from models.table_access_info import TableAccessInfo
 from modifier.batch_processor import BatchProcessor
-from modifier.context_generator import ContextGeneratorFactory
 from modifier.llm.llm_provider import LLMProvider
 
 from ..base_code_generator import BaseCodeGenerator
@@ -41,8 +40,8 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
             Dict[str, str]: 파일명 -> 절대 경로 매핑
         """
         return {
-            Path(snippet.path).name: snippet.path
-            for snippet in input_data.code_snippets
+            Path(file_path).name: file_path
+            for file_path in input_data.file_paths
         }
 
     def generate(self, input_data: CodeGeneratorInput) -> CodeGeneratorOutput:
@@ -94,90 +93,45 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
             logger.error(f"Code 생성 중 오류 발생: {e}")
             raise
 
-    def generate_modification_plans(
-        self, table_access_info: TableAccessInfo
-    ) -> List[ModificationPlan]:
-        """
-        수정 계획을 생성합니다.
-        ControllerOrServiceStrategy의 로직을 이관했습니다.
 
-        Args:
-            table_access_info: 테이블 접근 정보
 
-        Returns:
-            List[ModificationPlan]: 수정 계획 리스트
-        """
-        plans = []
-
-        try:
-            # ContextGenerator를 사용하여 배치 생성
-            context_generator = ContextGeneratorFactory.create(
-                config=self.config,
-                code_generator=self,
-            )
-            all_batches = context_generator.generate(
-                table_access_info=table_access_info,
-            )
-
-            # BatchProcessor 초기화
-            # batch_processor = BatchProcessor(max_workers=self.config.max_workers)
-
-            # 병렬 처리 실행
-            # plan_batches = batch_processor.process_items_parallel(
-            #     items=all_batches,
-            #     process_func=self._generate_batch_plans,
-            #     desc="파일 수정 계획 생성 중",
-            # )
-
-            # 결과 통합
-            # for plan_batch in plan_batches:
-            #     if plan_batch:
-            #         plans.extend(plan_batch)
-
-            # 순차 처리: all_batches의 각 item을 순차적으로 처리
-            for batch in tqdm(all_batches, desc="파일 수정 계획 생성 중", unit="batch"):
-                plan_batch = self._generate_batch_plans(batch)
-                if plan_batch:
-                    plans.extend(plan_batch)
-
-            return plans
-
-        except Exception as e:
-            logger.error(f"계획 생성 실패: {e}")
-            raise
-
-    def _generate_batch_plans(
+    def generate_modification_plan(
         self, modification_context: ModificationContext
     ) -> List[ModificationPlan]:
         """
-        배치 처리를 통해 수정 계획을 생성합니다.
+        수정 계획을 생성합니다 (단일 컨텍스트).
         ControllerOrServiceStrategy의 로직을 이관했습니다.
 
         Args:
-            modification_context: 수정 컨텍스트 (배치 정보 포함)
+            modification_context: 수정 컨텍스트
 
         Returns:
             List[ModificationPlan]: 수정 계획 리스트
         """
-        # code_snippets가 비어있으면 빈 리스트 반환
-        if not modification_context.code_snippets:
+        # file_paths가 비어있으면 빈 리스트 반환
+        if not modification_context.file_paths:
             return []
 
         plans = []
-        batch = modification_context.code_snippets
+        batch = modification_context.file_paths
         layer_name = modification_context.layer
-        table_access_info = modification_context.table_access_info
+        table_name = modification_context.table_name
+        columns = modification_context.columns
 
         # 배치 처리
         try:
             # variables에서 table_info와 layer_name 추출
-            table_info_str = self._format_table_info(table_access_info)
+            table_info = {
+                "table_name": table_name,
+                "columns": columns,
+            }
+            table_info_str = json.dumps(table_info, indent=2, ensure_ascii=False)
 
             # extra_variables 준비
             extra_vars = {"file_count": len(batch)}
 
             input_data = CodeGeneratorInput(
-                code_snippets=batch,
+                file_paths=batch,
                 table_info=table_info_str,
                 layer_name=layer_name,
                 extra_variables=extra_vars,
@@ -185,8 +139,8 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
 
             logger.info("--------------------------------")
             logger.info("_generate_batch_plans():")
-            for code_snippet in batch:
-                logger.info(f"code_snippet.path: {code_snippet.path}")
+            for file_path in batch:
+                logger.info(f"file path: {file_path}")
             logger.info("--------------------------------")
             # Code 생성
             code_out = self.generate(input_data)
@@ -204,7 +158,7 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
             for mod in parsed_modifications:
                 file_path_str = mod.get("file_path", "")
                 reason = mod.get("reason", "")
-                unified_diff = mod.get("unified_diff", "")
+                modified_code = mod.get("modified_code", "")
 
                 # LLM 응답에서 받은 절대 경로를 그대로 사용
                 file_path = Path(file_path_str)
@@ -222,14 +176,14 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
                     file_path=str(file_path),
                     layer_name=layer_name,
                     modification_type="encryption",
-                    unified_diff=unified_diff,
+                    modified_code=modified_code,
                     reason=reason,
                     tokens_used=tokens_used,
                     status="pending",
                 )
 
-                # unified_diff가 빈 문자열인 경우 스킵 상태로 설정
-                if not unified_diff or unified_diff.strip() == "":
+                # modified_code가 빈 문자열인 경우 스킵 상태로 설정
+                if not modified_code or modified_code.strip() == "":
                     logger.info(
                         f"파일 수정 건너뜀 (계획): {file_path} (이유: {reason})"
                     )
@@ -240,10 +194,10 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
         except Exception as e:
             logger.error(f"배치 계획 생성 실패: {e}")
             # 배치 내 모든 파일에 대해 실패 계획 기록
-            for file_info in batch:
+            for file_path in batch:
                 plans.append(
                     ModificationPlan(
-                        file_path=file_info.path,
+                        file_path=file_path,
                         layer_name=layer_name,
                         modification_type="encryption",
                         status="failed",
@@ -254,23 +208,7 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
 
         return plans
 
-    def _format_table_info(self, table_access_info: TableAccessInfo) -> str:
-        """
-        테이블 정보를 JSON 형식으로 포맷팅합니다.
-        ControllerOrServiceStrategy의 로직을 이관했습니다.
 
-        Args:
-            table_access_info: 테이블 접근 정보
-
-        Returns:
-            str: JSON 형식의 테이블 정보
-        """
-        table_info = {
-            "table_name": table_access_info.table_name,
-            "columns": table_access_info.columns,
-        }
-
-        return json.dumps(table_info, indent=2, ensure_ascii=False)
 
     def _get_cache_key(self, prompt: str) -> str:
         """프롬프트의 캐시 키를 생성합니다."""

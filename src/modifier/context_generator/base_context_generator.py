@@ -2,12 +2,12 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Any
 
 from config.config_manager import Configuration
 from models.code_generator import CodeGeneratorInput
-from models.modification_context import CodeSnippet, ModificationContext
-from models.table_access_info import TableAccessInfo
+from models.modification_context import ModificationContext
+
 from modifier.code_generator.base_code_generator import BaseCodeGenerator
 
 logger = logging.getLogger("applycrypto.context_generator")
@@ -25,13 +25,17 @@ class BaseContextGenerator(ABC):
     @abstractmethod
     def generate(
         self,
-        table_access_info: TableAccessInfo,
+        layer_files: Dict[str, List[str]],
+        table_name: str,
+        columns: List[Dict],
     ) -> List[ModificationContext]:
         """
         Generates modification contexts.
 
         Args:
-            table_access_info: Table access information containing file paths.
+            layer_files: Dictionary of layer names and their corresponding file paths.
+            table_name: Name of the table.
+            columns: List of columns accessed.
 
         Returns:
             List[ModificationContext]: The generated batches of contexts.
@@ -40,37 +44,39 @@ class BaseContextGenerator(ABC):
 
     def create_batches(
         self,
-        code_snippets: List[CodeSnippet],
-        table_access_info: TableAccessInfo,
+        file_paths: List[str],
+        table_name: str,
+        columns: List[Dict],
         layer: str,
     ) -> List[ModificationContext]:
         """
         Splits file list into batches based on token size.
 
         Args:
-            code_snippets: List of code snippets.
-            table_access_info: Table access information.
+            file_paths: List of file paths.
+            table_name: Table name.
+            columns: List of columns.
             layer: Layer name.
 
         Returns:
             List[ModificationContext]: List of split modification contexts.
         """
-        if not code_snippets:
+        if not file_paths:
             return []
 
         batches: List[ModificationContext] = []
-        current_snippets: List[CodeSnippet] = []
+        current_paths: List[str] = []
 
         # Prepare basic info
         table_info = {
-            "table_name": table_access_info.table_name,
-            "columns": table_access_info.columns,
+            "table_name": table_name,
+            "columns": columns,
         }
         formatted_table_info = json.dumps(table_info, indent=2, ensure_ascii=False)
         max_tokens = self._config.max_tokens_per_batch
 
         input_empty_data = CodeGeneratorInput(
-            code_snippets=[], table_info=formatted_table_info, layer_name=layer
+            file_paths=[], table_info=formatted_table_info, layer_name=layer
         )
 
         # Create empty prompt and calculate tokens
@@ -82,89 +88,64 @@ class BaseContextGenerator(ABC):
 
         current_batch_tokens = empty_num_tokens
 
-        for snippet in code_snippets:
+        for file_path in file_paths:
+            # Read content for token calculation
+            try:
+                path_obj = Path(file_path)
+                if not path_obj.exists():
+                     logger.warning(f"File not found during batch creation: {file_path}")
+                     continue
+                
+                with open(path_obj, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except Exception as e:
+                logger.error(f"Failed to read file {file_path}: {e}")
+                continue
+
             # Format snippet and calculate tokens
             snippet_formatted = (
-                f"=== File Path (Absolute): {snippet.path} ===\n{snippet.content}"
+                f"=== File Path (Absolute): {file_path} ===\n{content}"
             )
             snippet_tokens = self._code_generator.calculate_token_size(snippet_formatted)
 
             # Add separator tokens if not the first snippet
             tokens_to_add = snippet_tokens
-            if current_snippets:
+            if current_paths:
                 tokens_to_add += separator_tokens
 
-            if current_snippets and (current_batch_tokens + tokens_to_add) > max_tokens:
+            if current_paths and (current_batch_tokens + tokens_to_add) > max_tokens:
                 # Save current batch and start new one
                 batches.append(
                     ModificationContext(
-                        code_snippets=current_snippets,
-                        table_access_info=table_access_info,
-                        file_count=len(current_snippets),
+                        file_paths=current_paths,
+                        table_name=table_name,
+                        columns=columns,
+                        file_count=len(current_paths),
                         layer=layer,
                     )
                 )
-                current_snippets = [snippet]
+                current_paths = [file_path]
                 current_batch_tokens = empty_num_tokens + snippet_tokens
             else:
                 # Add to current batch
-                current_snippets.append(snippet)
+                current_paths.append(file_path)
                 current_batch_tokens += tokens_to_add
 
         # Add last batch
-        if current_snippets:
+        if current_paths:
             batches.append(
                 ModificationContext(
-                    code_snippets=current_snippets,
-                    table_access_info=table_access_info,
-                    file_count=len(current_snippets),
+                    file_paths=current_paths,
+                    table_name=table_name,
+                    columns=columns,
+                    file_count=len(current_paths),
                     layer=layer,
                 )
             )
 
         logger.info(
-            f"Split {len(code_snippets)} files into {len(batches)} batches (ModificationContext)."
+            f"Split {len(file_paths)} files into {len(batches)} batches (ModificationContext)."
         )
         return batches
 
-    def _read_files(self, file_paths: List[str], project_root: Path) -> List[CodeSnippet]:
-        """
-        Reads files and returns a list of CodeSnippets.
 
-        Args:
-            file_paths: List of file paths to read.
-            project_root: The root directory of the project for resolving relative paths.
-
-        Returns:
-            List[CodeSnippet]: List of read code snippets.
-        """
-        code_snippets: List[CodeSnippet] = []
-        for file_path in file_paths:
-            try:
-                file_path_obj = Path(file_path)
-                if not file_path_obj.is_absolute():
-                    full_path = project_root / file_path_obj
-                else:
-                    full_path = file_path_obj
-
-                # Resolve absolute path
-                full_path = full_path.resolve()
-
-                if full_path.exists():
-                    with open(full_path, "r", encoding="utf-8") as f:
-                        content = f.read()
-                    code_snippets.append(
-                        CodeSnippet(
-                            path=str(full_path),
-                            content=content,
-                        )
-                    )
-                else:
-                    logger.warning(
-                        f"File not found: {full_path} (Original path: {file_path})"
-                    )
-
-            except Exception as e:
-                logger.error(f"Failed to read file: {file_path} - {e}")
-
-        return code_snippets

@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from config.config_manager import Configuration, load_config
 from models.code_generator import CodeGeneratorInput
-from models.modification_context import CodeSnippet
+from models.modification_context import ModificationContext
 from modifier.code_modifier import CodeModifier
 from persistence.data_persistence_manager import DataPersistenceManager
 
@@ -74,15 +74,8 @@ def main():
         logger.error(f"Failed to load config: {e}")
         return
 
-    # Read file content
-    try:
-        content = file_path.read_text(encoding="utf-8")
-    except Exception as e:
-        logger.error(f"Failed to read file: {e}")
-        return
-
-    # Create CodeSnippet
-    snippet = CodeSnippet(path=str(file_path), content=content)
+    # CodeSnippet usage removed as it is no longer needed.
+    # The file path is passed directly to the generator via input_data.
 
     # Initialize CodeModifier to get the correct CodeGenerator
     try:
@@ -121,7 +114,9 @@ def main():
         # Format columns for JSON
         formatted_columns = []
         for col in target_columns:
-            if hasattr(col, "dict"):
+            if hasattr(col, "model_dump"):
+                formatted_columns.append(col.model_dump())
+            elif hasattr(col, "dict"):
                 formatted_columns.append(col.dict())
             else:
                 formatted_columns.append(col)  # it might be string or dict
@@ -137,7 +132,7 @@ def main():
         extra_vars = {"file_count": 1}
 
         input_data = CodeGeneratorInput(
-            code_snippets=[snippet],
+            file_paths=[str(file_path)],
             table_info=table_info_str,
             layer_name="service",  # Default assumption
             extra_variables=extra_vars,

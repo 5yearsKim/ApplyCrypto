@@ -9,7 +9,7 @@ import shutil
 import time
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,8 @@ class ErrorHandler:
 
         # 롤백을 위한 파일 백업 저장소
         self._backup_files: Dict[str, Path] = {}
+        # 생성된 모든 백업 파일 경로 추적 (삭제용)
+        self._all_backup_paths: List[Path] = []
 
     def retry_with_backoff(
         self, func: Callable, *args, **kwargs
@@ -107,13 +109,21 @@ class ErrorHandler:
                 return False
 
             # 백업 파일 경로 생성
-            backup_path = file_path.with_suffix(file_path.suffix + ".backup")
+            base_backup_path = file_path.with_suffix(file_path.suffix + ".backup")
+            backup_path = base_backup_path
+            
+            # 이미 백업 파일이 존재하면 번호 붙이기 (.backup.1, .backup.2, ...)
+            counter = 1
+            while backup_path.exists():
+                backup_path = Path(f"{base_backup_path}.{counter}")
+                counter += 1
 
             # 백업
             shutil.copy2(file_path, backup_path)
 
             # 백업 정보 저장
             self._backup_files[str(file_path)] = backup_path
+            self._all_backup_paths.append(backup_path)
 
             logger.debug(f"파일 백업 완료: {file_path} -> {backup_path}")
             return True
@@ -159,7 +169,7 @@ class ErrorHandler:
             logger.debug("백업 파일을 유지합니다.")
             return
 
-        for file_path_str, backup_path in self._backup_files.items():
+        for backup_path in self._all_backup_paths:
             try:
                 if backup_path.exists():
                     backup_path.unlink()
@@ -168,6 +178,7 @@ class ErrorHandler:
                 logger.warning(f"백업 파일 삭제 실패: {backup_path} - {e}")
 
         self._backup_files.clear()
+        self._all_backup_paths.clear()
         logger.debug("백업 파일 정리 완료")
 
     def handle_llm_error(

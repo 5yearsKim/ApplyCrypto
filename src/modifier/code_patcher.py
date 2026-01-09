@@ -39,14 +39,14 @@ class CodePatcher:
         self.config = config
 
     def apply_patch(
-        self, file_path: Path, unified_diff: str, dry_run: bool = False
+        self, file_path: Path, modified_code: str, dry_run: bool = False
     ) -> Tuple[bool, Optional[str]]:
         """
-        Unified Diff 형식의 패치를 파일에 적용합니다.
+        Modified Code를 파일에 적용합니다 (Full Source 또는 Diff).
 
         Args:
             file_path: 수정할 파일 경로
-            unified_diff: Unified Diff 형식의 수정 내용 (또는 generate_full_source가 True일 때 전체 소스 코드)
+            modified_code: 수정된 코드 내용 (전체 소스 코드 또는 Unified Diff)
             dry_run: 실제 수정 없이 시뮬레이션만 수행 (기본값: False)
 
         Returns:
@@ -81,7 +81,7 @@ class CodePatcher:
             if generate_full_source:
                 # 전체 소스 코드를 파일에 덮어쓰기
                 return self.apply_full_source(
-                    file_path=file_path, full_source=unified_diff, dry_run=dry_run
+                    file_path=file_path, full_source=modified_code, dry_run=dry_run
                 )
             else:
                 # subprocess로 patch 명령을 수행하는 대신 apply_patch_using_difflib 사용
@@ -115,7 +115,7 @@ class CodePatcher:
 
                 # 기존대로 unified diff 패치 적용
                 return self.apply_patch_using_difflib(
-                    file_path=file_path, unified_diff=unified_diff, dry_run=dry_run
+                    file_path=file_path, modified_code=modified_code, dry_run=dry_run
                 )
 
         except Exception as e:

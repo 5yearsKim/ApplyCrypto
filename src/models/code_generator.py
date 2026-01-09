@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from models.modification_context import CodeSnippet
+
 
 
 @dataclass
@@ -16,10 +16,10 @@ class CodeGeneratorOutput:
 class CodeGeneratorInput:
     """Code 생성기 입력 데이터"""
 
-    code_snippets: List["CodeSnippet"]
+    file_paths: List[str]
     """
-    소스 파일 리스트
-    [CodeSnippet(path="/abs/path/to/file.py", content="..."), ...]
+    소스 파일 경로 리스트
+    ["/abs/path/to/file.py", ...]
     """
 
     table_info: str
