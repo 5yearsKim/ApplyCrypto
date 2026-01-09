@@ -1,67 +1,82 @@
-@startuml Component Diagram
+@startuml component_diagram
 !theme plain
 skinparam componentStyle rectangle
 skinparam linetype ortho
+skinparam maxMessageSize 30
+skinparam wrapWidth 100
+skinparam packageStyle rectangle
+skinparam nodesep 10
+skinparam ranksep 20
 
-title ApplyCrypto 컴포넌트 다이어그램
+title ApplyCrypto Component Diagram
 
 package "CLI Layer" {
-  component [CLI Controller] as CLI
+  component [CLIController] as CLI
 }
 
-package "Configuration Layer" {
-  component [Config Manager] as Config
+package "Configuration" {
+  component [ConfigManager] as Config
 }
 
-package "Collection Layer" {
-  component [Source File Collector] as Collector
+package "Collection" {
+  component [SourceFileCollector] as Collector
 }
 
-package "Parsing Layer" {
-  component [Java AST Parser] as JavaParser
-  component [XML Mapper Parser] as XMLParser
-  component [Call Graph Builder] as CallGraph
-  component [Endpoint Extraction Strategy] as EndpointStrategy
-  component [Spring MVC Endpoint Extraction] as SpringMVC
-  component [Anyframe SarangOn Endpoint Extraction] as AnyframeEndpoint
+package "Parsing" {
+  component [JavaASTParser] as JavaParser
+  component [XMLMapperParser] as XMLParser
+  component [CallGraphBuilder] as CallGraph
+  component [EndpointStrategy] as EndpointStrategy
+  component [EndpointStrategyFactory] as EndpointStrategyFactory
+  component [SpringMVCExtraction] as SpringMVC
+  component [AnyframeExtraction] as AnyframeEndpoint
 }
 
-package "Analysis Layer" {
-  component [DB Access Analyzer] as DBAnalyzer
-  component [SQL Extractor] as SQLExtractor
-  component [MyBatis SQL Extractor] as MyBatisExtractor
-  component [JDBC SQL Extractor] as JDBCExtractor
-  component [JPA SQL Extractor] as JPAExtractor
-  component [Anyframe JDBC SQL Extractor] as AnyframeExtractor
-  component [SQL Extractor Factory] as SQLExtractorFactory
+package "Analysis" {
+  component [DBAccessAnalyzer] as DBAnalyzer
+  component [SQLExtractor] as SQLExtractor
+  component [MyBatisExtractor] as MyBatisExtractor
+  component [JDBCExtractor] as JDBCExtractor
+  component [JPAExtractor] as JPAExtractor
+  component [AnyframeExtractor] as AnyframeExtractor
+  component [SQLExtractorFactory] as SQLExtractorFactory
 }
 
-package "Modification Layer" {
-  component [Code Modifier] as CodeModifier
-  component [Code Generator] as CodeGenerator
-  component [Controller/Service Code Generator] as ControllerServiceGen
-  component [ServiceImpl/Biz Code Generator] as ServiceImplBizGen
-  component [TypeHandler Code Generator] as TypeHandlerGen
-  component [Code Generator Factory] as CodeGenFactory
-  component [Context Generator] as ContextGen
-  component [Batch Processor] as BatchProcessor
-  component [Code Patcher] as CodePatcher
-  component [Error Handler] as ErrorHandler
-  component [Result Tracker] as ResultTracker
-  component [Prompt Template Manager] as TemplateManager
+package "Modification" {
+  component [CodeModifier] as CodeModifier
+  component [CodeGenerator] as CodeGenerator
+  component [ControllerServiceGen] as ControllerServiceGen
+  component [ServiceImplBizGen] as ServiceImplBizGen
+  component [TypeHandlerGen] as TypeHandlerGen
+  component [CodeGenFactory] as CodeGenFactory
+  component [ContextGenerator] as ContextGen
+  component [ContextGenFactory] as ContextGenFactory
+  component [JDBCContextGen] as JdbcContextGen
+  component [MyBatisContextGen] as MybatisContextGen
+  component [BatchProcessor] as BatchProcessor
+  component [CodePatcher] as CodePatcher
+  component [ErrorHandler] as ErrorHandler
+  component [ResultTracker] as ResultTracker
+  component [CallChainProcessor] as CallChainProcessor
 }
 
-package "LLM Layer" {
-  component [LLM Factory] as LLMFactory
-  component [LLM Provider Interface] as LLMProvider
-  component [WatsonX Provider] as WatsonX
-  component [OpenAI Provider] as OpenAI
-  component [Claude AI Provider] as Claude
+package "Generator" {
+  component [TypeHandlerGenerator] as TypeHandlerGenerator
 }
 
-package "Persistence Layer" {
-  component [Data Persistence Manager] as Persistence
-  component [Cache Manager] as Cache
+package "LLM" {
+  component [LLMFactory] as LLMFactory
+  component [LLMProvider] as LLMProvider
+  component [WatsonX] as WatsonX
+  component [WatsonXOnPrem] as WatsonXOnPrem
+  component [OpenAI] as OpenAI
+  component [ClaudeAI] as Claude
+  component [MockLLM] as MockLLM
+}
+
+package "Storage" {
+  component [DataPersistenceManager] as Persistence
+  component [CacheManager] as Cache
 }
 
 package "Models" {
@@ -71,116 +86,158 @@ package "Models" {
   component [CallRelation] as CallRelationModel
   component [ModificationRecord] as ModRecordModel
   component [Endpoint] as EndpointModel
+  component [ModificationContext] as ModContextModel
+  component [ModificationPlan] as ModPlanModel
 }
 
-' CLI Layer 관계
-CLI --> Config : uses
-CLI --> Collector : uses
-CLI --> JavaParser : uses
-CLI --> XMLParser : uses
-CLI --> CallGraph : uses
-CLI --> DBAnalyzer : uses
-CLI --> CodeModifier : uses
-CLI --> Persistence : uses
+' CLI Layer relationships
+CLI --> Config
+CLI --> Collector
+CLI --> JavaParser
+CLI --> XMLParser
+CLI --> CallGraph
+CLI --> DBAnalyzer
+CLI --> CodeModifier
+CLI --> CallChainProcessor
+CLI --> TypeHandlerGenerator
+CLI --> Persistence
+CLI --> EndpointStrategyFactory
 
-' Collection Layer 관계
-Collector --> Config : uses
-Collector --> SourceFileModel : creates
+' Collection Layer relationships
+Collector --> Config
+Collector --> JavaParser
+Collector ..> SourceFileModel : creates
 
-' Parsing Layer 관계
-JavaParser --> Cache : uses
-JavaParser --> MethodModel : creates
-JavaParser --> CallRelationModel : creates
-XMLParser --> TableAccessModel : creates
-CallGraph --> JavaParser : uses
-CallGraph --> Cache : uses
-CallGraph --> MethodModel : uses
-CallGraph --> CallRelationModel : uses
-CallGraph --> EndpointStrategy : uses
-CallGraph --> EndpointModel : creates
-EndpointStrategy <|-- SpringMVC : implements
-EndpointStrategy <|-- AnyframeEndpoint : implements
+' Parsing Layer relationships
+JavaParser --> Cache
+JavaParser ..> MethodModel : creates
+JavaParser ..> CallRelationModel : creates
+XMLParser --> JavaParser
+XMLParser ..> TableAccessModel : creates
+CallGraph --> JavaParser
+CallGraph --> Cache
+CallGraph --> MethodModel
+CallGraph --> CallRelationModel
+CallGraph --> EndpointStrategy
+CallGraph ..> EndpointModel : creates
+EndpointStrategyFactory --> EndpointStrategy
+EndpointStrategyFactory --> SpringMVC
+EndpointStrategyFactory --> AnyframeEndpoint
+EndpointStrategy <|-- SpringMVC
+EndpointStrategy <|-- AnyframeEndpoint
 
-' Analysis Layer 관계
-DBAnalyzer --> Config : uses
-DBAnalyzer --> XMLParser : uses
-DBAnalyzer --> JavaParser : uses
-DBAnalyzer --> CallGraph : uses
-DBAnalyzer --> SQLExtractor : uses
-DBAnalyzer --> TableAccessModel : creates
-SQLExtractor <|-- MyBatisExtractor : implements
-SQLExtractor <|-- JDBCExtractor : implements
-SQLExtractor <|-- JPAExtractor : implements
-SQLExtractor <|-- AnyframeExtractor : implements
-SQLExtractorFactory --> SQLExtractor : creates
-SQLExtractorFactory --> MyBatisExtractor : creates
-SQLExtractorFactory --> JDBCExtractor : creates
-SQLExtractorFactory --> JPAExtractor : creates
-SQLExtractorFactory --> AnyframeExtractor : creates
+' Analysis Layer relationships
+DBAnalyzer --> Config
+DBAnalyzer --> XMLParser
+DBAnalyzer --> JavaParser
+DBAnalyzer --> CallGraph
+DBAnalyzer --> SQLExtractor
+DBAnalyzer ..> TableAccessModel : creates
+SQLExtractor <|-- MyBatisExtractor
+SQLExtractor <|-- JDBCExtractor
+SQLExtractor <|-- JPAExtractor
+SQLExtractor <|-- AnyframeExtractor
+SQLExtractorFactory --> Config
+SQLExtractorFactory --> SQLExtractor
+SQLExtractorFactory --> MyBatisExtractor
+SQLExtractorFactory --> JDBCExtractor
+SQLExtractorFactory --> JPAExtractor
+SQLExtractorFactory --> AnyframeExtractor
 
-' Modification Layer 관계
-CodeModifier --> Config : uses
-CodeModifier --> CodeGenerator : uses
-CodeModifier --> CodePatcher : uses
-CodeModifier --> ErrorHandler : uses
-CodeModifier --> ResultTracker : uses
-CodeModifier --> TableAccessModel : uses
-CodeGenerator <|-- ControllerServiceGen : implements
-CodeGenerator <|-- ServiceImplBizGen : implements
-CodeGenerator <|-- TypeHandlerGen : implements
-CodeGenFactory --> CodeGenerator : creates
-CodeGenFactory --> ControllerServiceGen : creates
-CodeGenFactory --> ServiceImplBizGen : creates
-CodeGenFactory --> TypeHandlerGen : creates
-ControllerServiceGen --> ContextGen : uses
-ControllerServiceGen --> BatchProcessor : uses
-ControllerServiceGen --> TemplateManager : uses
-ControllerServiceGen --> LLMProvider : uses
-BatchProcessor --> TemplateManager : uses
-BatchProcessor --> LLMProvider : uses
-CodePatcher --> ErrorHandler : uses
-ResultTracker --> ModRecordModel : creates
+' Modification Layer relationships
+CodeModifier --> Config
+CodeModifier --> CodeGenerator
+CodeModifier --> CodePatcher
+CodeModifier --> ErrorHandler
+CodeModifier --> ResultTracker
+CodeModifier --> TableAccessModel
+CodeModifier --> LLMProvider
+CodeGenerator <|-- ControllerServiceGen
+CodeGenerator <|-- ServiceImplBizGen
+CodeGenerator <|-- TypeHandlerGen
+CodeGenFactory --> Config
+CodeGenFactory --> CodeGenerator
+CodeGenFactory --> ControllerServiceGen
+CodeGenFactory --> ServiceImplBizGen
+CodeGenFactory --> TypeHandlerGen
+CodeGenFactory --> LLMProvider
+ControllerServiceGen --> ContextGen
+ControllerServiceGen --> BatchProcessor
+ControllerServiceGen --> LLMProvider
+ServiceImplBizGen --> ContextGen
+TypeHandlerGen --> ContextGen
+ContextGenFactory --> Config
+ContextGenFactory --> ContextGen
+ContextGenFactory --> JdbcContextGen
+ContextGenFactory --> MybatisContextGen
+ContextGen <|-- JdbcContextGen
+ContextGen <|-- MybatisContextGen
+BatchProcessor --> LLMProvider
+CodePatcher --> ErrorHandler
+ResultTracker ..> ModRecordModel : creates
+CallChainProcessor --> Config
+CallChainProcessor --> CodeGenerator
+CallChainProcessor --> CodePatcher
+CallChainProcessor --> LLMProvider
 
-' LLM Layer 관계
-LLMFactory --> LLMProvider : creates
-LLMFactory --> WatsonX : creates
-LLMFactory --> OpenAI : creates
-LLMFactory --> Claude : creates
-WatsonX ..|> LLMProvider : implements
-OpenAI ..|> LLMProvider : implements
-Claude ..|> LLMProvider : implements
+' Generator Layer relationships
+TypeHandlerGenerator --> Config
 
-' Persistence Layer 관계
-Persistence --> Cache : uses
-Persistence --> SourceFileModel : serializes
-Persistence --> TableAccessModel : serializes
-Persistence --> MethodModel : serializes
-Persistence --> CallRelationModel : serializes
-Persistence --> ModRecordModel : serializes
+' LLM Layer relationships
+LLMFactory --> LLMProvider
+LLMFactory --> WatsonX
+LLMFactory --> WatsonXOnPrem
+LLMFactory --> OpenAI
+LLMFactory --> Claude
+LLMFactory --> MockLLM
+WatsonX ..|> LLMProvider
+WatsonXOnPrem ..|> LLMProvider
+OpenAI ..|> LLMProvider
+Claude ..|> LLMProvider
+MockLLM ..|> LLMProvider
+
+' Storage Layer relationships
+Persistence --> Cache
+Persistence ..> SourceFileModel : serializes
+Persistence ..> TableAccessModel : serializes
+Persistence ..> MethodModel : serializes
+Persistence ..> CallRelationModel : serializes
+Persistence ..> ModRecordModel : serializes
+Persistence ..> EndpointModel : serializes
 
 note right of CLI
-  CLI 진입점
-  analyze, list, modify 명령어 처리
+  CLI Entry Point
+  analyze, list, modify, clear
 end note
 
 note right of CodeModifier
-  LLM을 활용한
-  코드 자동 수정
+  LLM-based
+  Automatic Code Modification
 end note
 
 note right of DBAnalyzer
-  DB 접근 패턴 분석
-  Call Graph 역추적
+  DB Access Pattern Analysis
+  Call Graph Reverse Tracking
 end note
 
 note right of SQLExtractor
-  SQL 추출 전략 패턴
-  MyBatis, JDBC, JPA, Anyframe 지원
+  SQL Extraction Strategy
+  MyBatis, JDBC, JPA, Anyframe
 end note
 
 note right of EndpointStrategy
-  엔드포인트 추출 전략
-  Spring MVC, Anyframe SarangOn 지원
+  Endpoint Extraction
+  Spring MVC, Anyframe
+end note
+
+note right of CallChainProcessor
+  Call Chain Mode
+  Process by Call Chain
+end note
+
+note right of TypeHandlerGenerator
+  Type Handler Mode
+  MyBatis TypeHandler Generation
 end note
 
 @enduml

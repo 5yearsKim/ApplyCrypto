@@ -1,64 +1,82 @@
 #!/usr/bin/env python3
 """
 PlantUML 다이어그램을 이미지로 렌더링하는 스크립트
+로컬 PlantUML JAR를 사용하여 렌더링합니다.
 """
 
+import subprocess
+import sys
 from pathlib import Path
-
-from plantuml import PlantUML
 
 
 def render_diagram(puml_file: Path, output_format: str = "png"):
     """
-    PlantUML 파일을 이미지로 렌더링
+    PlantUML 파일을 이미지로 렌더링 (로컬 JAR 사용)
 
     Args:
         puml_file: PlantUML 파일 경로
         output_format: 출력 형식 (png, svg 등)
     """
     try:
-        # PlantUML 서버 사용 (공개 서버)
-        server = PlantUML(url="http://www.plantuml.com/plantuml/img/")
-
         # 출력 파일 경로
         output_file = puml_file.with_suffix(f".{output_format}")
 
         print(f"렌더링 중: {puml_file.name} -> {output_file.name}")
 
-        # 파일 내용 읽기
-        with open(puml_file, "r", encoding="utf-8") as f:
-            puml_content = f.read()
+        # PlantUML JAR 파일 경로
+        script_dir = Path(__file__).parent
+        plantuml_jar = script_dir / "plantuml.jar"
 
-        # 다이어그램 렌더링 (processes 메서드 사용)
-        diagram_data = server.processes(puml_content)
-
-        # 응답 검증
-        if not isinstance(diagram_data, bytes):
-            print(f"[ERROR] 예상치 못한 응답 타입: {type(diagram_data)}")
+        if not plantuml_jar.exists():
+            print(f"[ERROR] PlantUML JAR 파일을 찾을 수 없습니다: {plantuml_jar}")
+            print("       PlantUML JAR를 다운로드하거나 경로를 확인하세요.")
             return False
 
-        # HTML 오류 페이지인지 확인
-        if diagram_data.startswith(b"<") or diagram_data.startswith(b"<!DOCTYPE"):
-            print("[ERROR] PlantUML 서버가 HTML 오류 페이지를 반환했습니다.")
-            error_text = diagram_data[:500].decode("utf-8", errors="ignore")
-            print(f"   오류 내용: {error_text[:200]}...")
+        # Java 명령어 실행
+        import os
+        env = os.environ.copy()
+        env["PLANTUML_LIMIT_SIZE"] = "8192"  # 이미지 크기 제한 증가
+        
+        cmd = [
+            "java",
+            "-jar",
+            str(plantuml_jar),
+            f"-t{output_format}",
+            "-charset",
+            "UTF-8",
+            str(puml_file),
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(puml_file.parent),
+            env=env,
+        )
+
+        if result.returncode != 0:
+            print(f"[ERROR] PlantUML 렌더링 실패:")
+            print(result.stderr)
             return False
 
-        # PNG 파일인지 확인 (PNG 시그니처: 89 50 4E 47)
-        if not diagram_data.startswith(b"\x89PNG"):
-            print("[ERROR] 생성된 데이터가 PNG 형식이 아닙니다.")
-            print(f"   헤더: {diagram_data[:10]}")
+        # 출력 파일 확인
+        if not output_file.exists():
+            print(f"[ERROR] 출력 파일이 생성되지 않았습니다: {output_file}")
             return False
-
-        # 파일 저장
-        with open(output_file, "wb") as f:
-            f.write(diagram_data)
 
         # 파일 크기 확인
         file_size = output_file.stat().st_size
-        print(f"[OK] 완료: {output_file} ({file_size:,} bytes)")
+        if file_size == 0:
+            print(f"[ERROR] 생성된 파일이 비어있습니다: {output_file}")
+            return False
+
+        print(f"[OK] 완료: {output_file.name} ({file_size:,} bytes)")
         return True
 
+    except FileNotFoundError:
+        print("[ERROR] Java를 찾을 수 없습니다. Java가 설치되어 있는지 확인하세요.")
+        return False
     except Exception as e:
         print(f"[ERROR] 오류 발생: {e}")
         import traceback
@@ -87,7 +105,7 @@ def main():
             if render_diagram(puml_file, "png"):
                 success_count += 1
         else:
-            print(f"[ERROR] 파일을 찾을 수 없습니다: {puml_file}")
+            print(f"[SKIP] 파일을 찾을 수 없습니다: {puml_file.name}")
 
     print(f"\n완료: {success_count}/{len(puml_files)}개 파일 렌더링 성공")
 
