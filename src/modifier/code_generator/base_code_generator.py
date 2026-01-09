@@ -166,7 +166,7 @@ class BaseCodeGenerator(ABC):
         Returns:
             List[Dict[str, Any]]: 수정 정보 리스트
                 - file_path: 파일 경로
-                - unified_diff: Unified Diff 형식의 수정 내용
+                - modified_code: 수정된 코드 내용 (전체 소스 코드 또는 diff)
 
         Raises:
             DiffGeneratorError: 파싱 실패 시
@@ -249,7 +249,7 @@ class BaseCodeGenerator(ABC):
                 modifications.append({
                     "file_path": file_path,
                     "reason": reason.strip(),
-                    "unified_diff": modified_code.strip(),
+                    "modified_code": modified_code.strip(),
                 })
 
             except Exception as e:

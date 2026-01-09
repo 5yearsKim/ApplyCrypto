@@ -18,7 +18,7 @@ class ModificationPlan:
         layer_name: 레이어 이름
         modification_type: 수정 유형 (예: "encryption")
         status: 계획 상태 (pending, skipped, failed, success)
-        unified_diff: Unified diff 형식의 수정 내용
+        modified_code: 수정된 코드 (전체 소스 코드 또는 diff)
         error: 에러 메시지
         tokens_used: 사용된 토큰 수
         reason: 수정/스킵 이유
@@ -28,7 +28,7 @@ class ModificationPlan:
     layer_name: str
     modification_type: str
     status: str = "pending"
-    unified_diff: Optional[str] = None
+    modified_code: Optional[str] = None
     error: Optional[str] = None
     tokens_used: int = 0
     reason: Optional[str] = None
@@ -40,7 +40,7 @@ class ModificationPlan:
             "layer_name": self.layer_name,
             "modification_type": self.modification_type,
             "status": self.status,
-            "unified_diff": self.unified_diff,
+            "modified_code": self.modified_code,
             "error": self.error,
             "tokens_used": self.tokens_used,
             "reason": self.reason,
@@ -54,7 +54,7 @@ class ModificationPlan:
             layer_name=data["layer_name"],
             modification_type=data["modification_type"],
             status=data.get("status", "pending"),
-            unified_diff=data.get("unified_diff"),
+            modified_code=data.get("modified_code"),
             error=data.get("error"),
             tokens_used=data.get("tokens_used", 0),
             reason=data.get("reason"),

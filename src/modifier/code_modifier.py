@@ -210,7 +210,7 @@ class CodeModifier:
             Dict[str, Any]: 적용 결과
         """
         file_path_str = plan.file_path
-        unified_diff = plan.unified_diff
+        modified_code = plan.modified_code
         status = plan.status
         error_msg = plan.error
         layer_name = plan.layer_name
@@ -225,21 +225,21 @@ class CodeModifier:
                 layer=layer_name,
                 modification_type=modification_type,
                 status=status,
-                diff=unified_diff,
+                diff=modified_code,
                 error=error_msg,
                 tokens_used=tokens_used,
                 reason=reason,
             )
 
-        if not unified_diff:
-            # Diff가 없으면 스킵
+        if not modified_code:
+            # Code가 없으면 스킵
             return self.result_tracker.record_modification(
                 file_path=file_path_str,
                 layer=layer_name,
                 modification_type=modification_type,
                 status="skipped",
                 diff=None,
-                error="No diff generated",
+                error="No modified code generated",
                 tokens_used=tokens_used,
                 reason=reason,
             )
@@ -253,7 +253,7 @@ class CodeModifier:
 
             # 패치 적용
             success, error = self.code_patcher.apply_patch(
-                file_path=file_path, unified_diff=unified_diff, dry_run=dry_run
+                file_path=file_path, modified_code=modified_code, dry_run=dry_run
             )
 
             if success:
@@ -272,7 +272,7 @@ class CodeModifier:
                 layer=layer_name,
                 modification_type=modification_type,
                 status=status,
-                diff=unified_diff if status == "success" else None,
+                diff=modified_code if status == "success" else None,
                 error=error_msg,
                 tokens_used=tokens_used,
                 reason=reason,

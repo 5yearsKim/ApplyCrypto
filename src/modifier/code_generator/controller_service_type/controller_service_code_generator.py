@@ -158,7 +158,7 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
             for mod in parsed_modifications:
                 file_path_str = mod.get("file_path", "")
                 reason = mod.get("reason", "")
-                unified_diff = mod.get("unified_diff", "")
+                modified_code = mod.get("modified_code", "")
 
                 # LLM 응답에서 받은 절대 경로를 그대로 사용
                 file_path = Path(file_path_str)
@@ -176,14 +176,14 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
                     file_path=str(file_path),
                     layer_name=layer_name,
                     modification_type="encryption",
-                    unified_diff=unified_diff,
+                    modified_code=modified_code,
                     reason=reason,
                     tokens_used=tokens_used,
                     status="pending",
                 )
 
-                # unified_diff가 빈 문자열인 경우 스킵 상태로 설정
-                if not unified_diff or unified_diff.strip() == "":
+                # modified_code가 빈 문자열인 경우 스킵 상태로 설정
+                if not modified_code or modified_code.strip() == "":
                     logger.info(
                         f"파일 수정 건너뜀 (계획): {file_path} (이유: {reason})"
                     )
