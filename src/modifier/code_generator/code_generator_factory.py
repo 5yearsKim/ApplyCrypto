@@ -60,9 +60,18 @@ class CodeGeneratorFactory:
 
             return TypeHandlerCodeGenerator(llm_provider=llm_provider, config=config)
 
+        elif modification_type == "TwoStep":
+            from .two_step_type.two_step_code_generator import (
+                TwoStepCodeGenerator,
+            )
+
+            # TwoStep은 내부에서 자체적으로 LLM Provider를 생성하므로
+            # llm_provider 파라미터는 사용하지 않음
+            return TwoStepCodeGenerator(config=config)
+
         else:
             raise ValueError(
                 f"지원하지 않는 modification_type: {modification_type}. "
-                f"가능한 값: TypeHandler, ControllerOrService, ServiceImplOrBiz"
+                f"가능한 값: TypeHandler, ControllerOrService, ServiceImplOrBiz, TwoStep"
             )
 

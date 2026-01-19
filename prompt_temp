@@ -1,0 +1,727 @@
+# 코드 수정 실행 (Execution Phase)
+
+## 역할
+
+당신은 Java 코드를 **정확하게** 수정하는 전문가입니다.
+아래 **수정 지침을 문자 그대로** 따라 코드를 수정하세요.
+
+---
+
+## 절대 준수 사항 (Critical Rules)
+
+1. **기존 코드 유지**: 포맷, 주석, 들여쓰기, 빈 줄을 절대 변경하지 마세요
+2. **지침만 수행**: 수정 지침에 명시된 부분만 수정하세요
+3. **전체 코드 출력**: 수정 후 파일의 전체 소스 코드를 출력하세요
+4. **코드 생략 금지**: `// ... 기존 코드 ...` 같은 생략 표현을 사용하지 마세요
+5. **수정 불필요 시**: action이 "SKIP"인 파일은 수정하지 않고 이유만 출력
+
+---
+
+## 수정 지침 (Planning 단계에서 생성됨)
+
+{
+  "data_flow_analysis": {
+    "overview": "tb_employee 테이블은 사람식별정보(성명, 주민등록번호, 생년월일, 성별)를 보관하고 있으며, 해당 컬럼은 KSign 프레임워크를 이용해 암호화/복호화한다. HTTP 요청/응답 단계에서는 순수 데이터만 전달하고, 실제 암호화·복호화 작업은 Service 레이어에서 DAO 호출 전후에 수행한다.",
+    "flows": [
+      {
+        "flow_id": "FLOW_001",
+        "flow_name": "직원 등록 (INSERT)",
+        "direction": "INBOUND_TO_DB",
+        "data_source": {
+          "type": "HTTP_REQUEST",
+          "description": "클라이언트가 GET/POST 형태의 폼 혹은 JSON 으로 직원 정보를 전송"
+        },
+        "data_sink": {
+          "type": "DB",
+          "description": "tb_employee 테이블에 INSERT"
+        },
+        "path": "EmployeeController.addEmp* → EmployeeService.save → EmployeeMapper.addEmp → DB",
+        "sensitive_columns": [
+          "last_name",
+          "jumin_number",
+          "day_of_birth",
+          "sex"
+        ],
+        "crypto_action": "ENCRYPT",
+        "crypto_timing": "Service 레이어에서 DAO 호출 직전"
+      },
+      {
+        "flow_id": "FLOW_002",
+        "flow_name": "직원 수정 (UPDATE)",
+        "direction": "INBOUND_TO_DB",
+        "data_source": {
+          "type": "HTTP_REQUEST",
+          "description": "클라이언트가 GET/POST 형태로 수정할 직원 정보를 전송"
+        },
+        "data_sink": {
+          "type": "DB",
+          "description": "tb_employee 테이블에 UPDATE"
+        },
+        "path": "EmployeeController.editEmp* → EmployeeService.update → EmployeeMapper.updateEmp → DB",
+        "sensitive_columns": [
+          "last_name",
+          "jumin_number",
+          "day_of_birth",
+          "sex"
+        ],
+        "crypto_action": "ENCRYPT",
+        "crypto_timing": "Service 레이어에서 DAO 호출 직전"
+      },
+      {
+        "flow_id": "FLOW_003",
+        "flow_name": "직원 조회 (SELECT)",
+        "direction": "DB_TO_OUTBOUND",
+        "data_source": {
+          "type": "DB",
+          "description": "tb_employee 를 SELECT (다양한 조건, 페이징, 전체 리스트) "
+        },
+        "data_sink": {
+          "type": "HTTP_RESPONSE",
+          "description": "클라이언트에게 JSON 혹은 화면(view) 로 반환"
+        },
+        "path": "EmployeeController.* → EmployeeService.get* → EmployeeMapper.select* → DB → Service 복호화 → Controller 반환",
+        "sensitive_columns": [
+          "last_name",
+          "jumin_number",
+          "day_of_birth",
+          "sex"
+        ],
+        "crypto_action": "DECRYPT",
+        "crypto_timing": "Service 레이어에서 DAO 반환 직후"
+      }
+    ],
+    "layer_responsibilities": {
+      "controller": "HTTP 요청/응답을 담당하고, 파라미터/결과를 Service 로 전달만 함. 암호화·복호화 로직이 들어가면 안 됨.",
+      "service": "비즈니스 로직 중심. KSign 암호화·복호화 호출을 삽입하는 유일한 위치이며, DAO 호출 전후에 각각 ENCRYPT/DECRYPT 를 수행.",
+      "dao (Mapper)": "MyBatis 매퍼만 담당. 전달받은 객체를 그대로 DB에 넣거나 DB 결과를 그대로 반환함. 암호화·복호화 로직이 없어야 함."
+    }
+  },
+  "modification_instructions": [
+    {
+      "file_path": "/home/jihunkeom/projects/SLI_applycrypto/book-ssm/src/main/java/com/mybatis/service/EmployeeService.java",
+      "file_name": "EmployeeService.java",
+      "target_method": "save",
+      "action": "SKIP",
+      "reason": "이미 INSERT 전 KSign 암호화를 수행하고 있음(코드 내 SingleData 설정 및 encryptMultiData 호출).",
+      "target_columns": [
+        {
+          "column_name": "last_name",
+          "constant": "KsignConstants.NAME"
+        },
+        {
+          "column_name": "jumin_number",
+          "constant": "KsignConstants.JUMIN"
+        },
+        {
+          "column_name": "day_of_birth",
+          "constant": "KsignConstants.DOB"
+        },
+        {
+          "column_name": "sex",
+          "constant": "KsignConstants.GENDER"
+        }
+      ],
+      "insertion_point": "",
+      "data_object_name": "",
+      "code_pattern_hint": ""
+    },
+    {
+      "file_path": "/home/jihunkeom/projects/SLI_applycrypto/book-ssm/src/main/java/com/mybatis/service/EmployeeService.java",
+      "file_name": "EmployeeService.java",
+      "target_method": "update",
+      "action": "SKIP",
+      "reason": "UPDATE 전 암호화 로직이 존재하고, 컬럼 매핑도 정확히 지정돼 있음.",
+      "target_columns": [
+        {
+          "column_name": "last_name",
+          "constant": "KsignConstants.NAME"
+        },
+        {
+          "column_name": "jumin_number",
+          "constant": "KsignConstants.JUMIN"
+        },
+        {
+          "column_name": "day_of_birth",
+          "constant": "KsignConstants.DOB"
+        },
+        {
+          "column_name": "sex",
+          "constant": "KsignConstants.GENDER"
+        }
+      ],
+      "insertion_point": "",
+      "data_object_name": "",
+      "code_pattern_hint": ""
+    },
+    {
+      "file_path": "/home/jihunkeom/projects/SLI_applycrypto/book-ssm/src/main/java/com/mybatis/service/EmployeeService.java",
+      "file_name": "EmployeeService.java",
+      "target_method": "getEmps|query|getEmpsByPage|getEmpById|getDatas|getPer",
+      "action": "SKIP",
+      "reason": "SELECT 후 복호화 로직이 이미 구현돼 있음. 모든 반환 객체에 대해 동일한 SingleData 매핑을 사용하고 있음.",
+      "target_columns": [
+        {
+          "column_name": "last_name",
+          "constant": "KsignConstants.NAME"
+        },
+        {
+          "column_name": "jumin_number",
+          "constant": "KsignConstants.JUMIN"
+        },
+        {
+          "column_name": "day_of_birth",
+          "constant": "KsignConstants.DOB"
+        },
+        {
+          "column_name": "sex",
+          "constant": "KsignConstants.GENDER"
+        }
+      ],
+      "insertion_point": "",
+      "data_object_name": "",
+      "code_pattern_hint": ""
+    },
+    {
+      "file_path": "/home/jihunkeom/projects/SLI_applycrypto/book-ssm/src/main/java/com/mybatis/controller/EmployeeController.java",
+      "file_name": "EmployeeController.java",
+      "target_method": "any",
+      "action": "SKIP",
+      "reason": "Controller는 데이터 전달만 담당한다. 암호화·복호화는 Service 레이어에서 이미 처리하고 있어 추가 변경이 불필요함.",
+      "target_columns": [],
+      "insertion_point": "",
+      "data_object_name": "",
+      "code_pattern_hint": ""
+    }
+  ]
+}
+
+---
+
+## 원본 소스 파일 (2개)
+
+=== File: EmployeeController.java ===
+package com.mybatis.controller;
+
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.text.DateFormat;
+import java.util.*;
+
+import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mybatis.utils.Jackson;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+import com.mybatis.beans.Department;
+import com.mybatis.beans.Employee;
+import com.mybatis.service.DepartmentService;
+import com.mybatis.service.EmployeeService;
+import com.mybatis.service.ExcleImpl;
+/*import com.servlet.JSONObject;*/
+
+@Controller
+public class EmployeeController {
+
+	@Autowired
+	private EmployeeService employeeService;
+
+	@Autowired
+	private DepartmentService deptService;
+
+	@RequestMapping("/emps")
+	public String getEmps(Map<String,Object> map)
+	{
+		List<Employee> emps = employeeService.getEmps();
+		map.put("employees", emps);
+		return "list";
+	}
+
+	@RequestMapping(value="/emps/init")
+	@ResponseBody
+	public Map<String, Object> init() {
+		List<Employee> emp_list = employeeService.getEmps();
+		List<Department> dept_list = deptService.getDepartments();
+		System.out.println(emp_list.size());
+		System.out.println(dept_list.size());
+		Map<String,Object> map = new HashMap<>();
+		map.put("count", emp_list.size());
+		map.put("depts", dept_list);
+		return map;
+	}
+
+	@ResponseBody
+	@RequestMapping("/emps/getLength")
+	public int getLength() {
+		int length = employeeService.getLength();
+		return length;
+	}
+	@ResponseBody
+	@RequestMapping("/emps/search")
+	public List<Employee> query(@RequestParam("condition") String condition) {
+		List<Employee> length = employeeService.query("%"+condition+"%");
+		return length;
+	}
+	@ResponseBody
+	@RequestMapping(value="/emps/getByPage",method=RequestMethod.GET)
+	public Collection<Employee> getByPage(@RequestParam("pageIndex") Integer pageIndex,@RequestParam("size") Integer size) {
+		List<Employee> emps = employeeService.getEmpsByPage((pageIndex-1)*size,size);
+		return emps;
+	}
+
+
+	/**ajaxʵ��ɾ��
+	 * @param id
+	 * @return
+	 */
+	@RequestMapping(value="/emp/delete",method=RequestMethod.GET)
+	@ResponseBody
+	public int delEmp(@RequestParam("eid") Integer id) {
+		System.out.println(id);
+		employeeService.delete(id);
+		return id;
+	}
+	/**ajaxʵ��ɾ��
+	 * @param id
+	 * @return
+	 */
+	@RequestMapping(value="/emp/delEmpByBatch",method=RequestMethod.GET)
+	@ResponseBody
+	public String delEmpByBatch(HttpServletRequest request) {
+		String json_str = request.getParameter("para");
+		Map<String, Object> map = Jackson.JsonToMap(json_str);
+		String ids = (String) map.get("ids");
+		String[] id_array = ids.split(",");
+		Map<String,Object> resturn_map = new HashMap<>();
+		String result="";
+		boolean status = true;
+		int code=200;
+		try
+		{
+		for(int i = 0;i < id_array.length;i++)
+		{
+			System.out.println("删除："+id_array[i]);
+			employeeService.delete(Integer.parseInt(id_array[i]));
+		}
+		}
+		catch (Exception e)
+		{
+			code = 500;
+			status = false;
+		}
+		resturn_map.put("data","ok");
+		resturn_map.put("code",code);
+		resturn_map.put("status",status);
+		result = ReturnMap(resturn_map);
+		return result;
+	}
+	@RequestMapping(value="/emp/query",method=RequestMethod.GET)
+	@ResponseBody
+	public String query(HttpServletRequest request) {
+		String json_str = request.getParameter("para");
+		Map<String, Object> map = Jackson.JsonToMap(json_str);
+		String condition = (String) map.get("condition");
+		Map<String,Object> resturn_map = new HashMap<>();
+		String result="";
+		boolean status = true;
+		int code=200;
+		List<Employee> list = null;
+		try {
+			request.setCharacterEncoding("UTF-8");
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
+		try
+		{
+			 list = employeeService.query("%"+condition+"%");
+		}
+		catch (Exception e)
+		{
+			code = 500;
+			status = false;
+		}
+		resturn_map.put("data",list);
+		resturn_map.put("code",code);
+		resturn_map.put("status",status);
+		result = ReturnMap(resturn_map);
+		return result;
+	}
+
+	private String ReturnMap(Map<String, Object> map)
+	{
+		return (String) Jackson.MapToJson(map);
+	}
+
+
+	/**ajax GET��ʽʵ�����
+	 * @param id
+	 * @return
+	 */
+	@RequestMapping(value="/emp/addEmpByGet",method=RequestMethod.GET)
+	@ResponseBody
+		public int addEmp(@RequestParam("employeename") String employeename, @RequestParam("sex") int sex, @RequestParam("dayOfBirth") String dayOfBirth, @RequestParam("juminNumber") String juminNumber, @RequestParam("email") String email, @RequestParam("did") Integer did) {
+
+		Employee employee = new Employee();
+		employee.setEmail(email);
+		employee.setLastName(employeename);
+		employee.setSex(sex);
+		employee.setDayOfBirth(dayOfBirth);
+		employee.setJuminNumber(juminNumber);
+		employee.setDept(deptService.getDeptById(did));
+		System.out.println(employee);
+		employeeService.save(employee);;
+		return 1;
+	}
+
+	/**ajax POST��ʽʵ�����
+	 * @param id
+	 * @return
+	 */
+	@RequestMapping(value="/emp/addEmpByPost",method=RequestMethod.POST)
+	@ResponseBody
+		public int addEmp(@RequestBody Employee emoloyee) {
+		System.out.println(emoloyee);
+		employeeService.save(emoloyee);
+		return 1;
+	}
+
+	/**ajaxʵ���޸ģ�һ��
+	 * @param id
+	 * @return
+	 * @RequestParam:��������GET����ʽ�����Ĳ���
+	 * GET���󣺿���ʹ��request��@RequestParam���ܲ���
+	 */
+	@RequestMapping(value="/emp/editEmpByGet",method=RequestMethod.GET)
+	@ResponseBody
+//	public int addEmp(@RequestBody String employeename,String sex,String email,Integer did) {
+		public int editEmp(HttpServletRequest request/*,@RequestParam("lastName") String lastName, @RequestParam("sex") String sex, @RequestParam("email") String email, @RequestParam("eid") Integer id*/) {
+		String lastName = request.getParameter("lastName");
+		String email = request.getParameter("email");
+		System.out.println("get:"+lastName);
+		Integer id = Integer.parseInt(request.getParameter("id"));
+		Integer did = Integer.parseInt(request.getParameter("did"));
+		Integer sex = Integer.parseInt(request.getParameter("sex"));
+		Employee employee = new Employee();
+		employee.setEmail(email);
+		employee.setLastName(lastName);
+		employee.setSex(sex);
+		employee.setDayOfBirth(request.getParameter("dayOfBirth"));
+		employee.setJuminNumber(request.getParameter("juminNumber"));
+		employee.setId(id);
+		Department dept = new Department();
+		dept.setId(did);
+		employee.setDept(dept);
+		employeeService.update(employee);
+		return 1;
+	}
+
+	/**ajaxʵ���޸ģ�����
+	 * @param id
+	 * @return
+	 * @RequestBody:����ֱ�ӽ�����ӳ��Ϊjavabean���󣬵��������Ĳ�������Ϊjson�ַ���(���Դ���������)��ֻ����һ��@RequestBody
+	 * POST������Ҫ��@RequestBody���ܲ���
+	 *
+	 */
+	@RequestMapping(value="/emp/editEmpByPost",method=RequestMethod.POST)
+	@ResponseBody
+		public int edit(HttpServletRequest request,@RequestBody Employee emp) {
+		System.out.println(emp);
+		employeeService.update(emp);
+		return 1;
+	}
+
+	@RequestMapping(value="/getDatas")
+	@ResponseBody
+		public Map<String, Object> getDatas() {
+		List<Map<String, Object>> json_data1 = employeeService.getDatas();
+		List<Map<String, Object>> json_data2 = employeeService.getPer();
+
+		System.out.println(json_data1);
+		System.out.println(json_data2);
+		Map<String,Object> map = new HashMap<>();
+		map.put("count", json_data1);
+		map.put("per", json_data2);
+		return map;
+	}
+	@RequestMapping(value="/getPer")
+	@ResponseBody
+		public List<Map<String, Object>> getPer() {
+		List<Map<String, Object>> json_data = employeeService.getPer();
+		System.out.println(json_data);
+		return json_data;
+	}
+	@RequestMapping(value="/data")
+		public String getData() {
+		return "data";
+	}
+	@RequestMapping(value="/chart")
+	public String getChart() {
+	return "chart";
+}
+
+@RequestMapping(value="/download_excel")
+public @ResponseBody String dowm(HttpServletResponse response){
+    ExcleImpl  excleImpl=new ExcleImpl();
+     response.setContentType("application/binary;charset=UTF-8");
+              try{
+                  ServletOutputStream out=response.getOutputStream();
+                  try {
+                      //�����ļ�ͷ�����һ�����������������ļ���(�������ǽУ�����.pdf)
+                	   DateFormat format = new java.text.SimpleDateFormat("yyyyMMddhhmmss");
+                       String date = format.format(new Date());
+                      response.setHeader("Content-Disposition", "attachment;fileName=" + URLEncoder.encode(date+".xls", "UTF-8"));
+                  } catch (UnsupportedEncodingException e1) {
+                      e1.printStackTrace();
+                  }
+
+                  String[] titles = { "�û�id", "�û�����","�û��Ա�", "�û�����" };
+                  List<Employee> list = employeeService.getEmps();
+                  excleImpl.export(list,titles, out);
+                  return "success";
+              } catch(Exception e){
+                  e.printStackTrace();
+                  return "������Ϣʧ��";
+              }
+          }
+
+
+}
+
+
+=== File: EmployeeService.java ===
+package com.mybatis.service;
+
+import java.util.List;
+import java.util.Map;
+
+import com.mybatis.beans.User;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.mybatis.beans.Department;
+import com.mybatis.beans.Employee;
+import com.mybatis.dao.DepartmentMapper;
+import com.mybatis.dao.EmployeeMapper;
+
+import k_sign.SingleData;
+import k_sign.KsignConstants;
+import k_sign.CryptoService;
+
+@Service
+public class EmployeeService {
+
+	@Autowired
+	private EmployeeMapper employeeMapper;
+
+	@Autowired
+	private DepartmentMapper deptMapper;
+
+	@Autowired
+	private CryptoService ksignService;
+
+	public List<Employee> getEmps(){
+		List<Employee> employees = employeeMapper.getEmps();
+		for (Employee employee : employees) {
+			SingleData dec = new SingleData();
+			dec.add("last_name", KsignConstants.NAME);
+			dec.add("jumin_number", KsignConstants.JUMIN);
+			dec.add("day_of_birth", KsignConstants.DOB);
+			dec.add("sex", KsignConstants.GENDER);
+			ksignService.decryptMultiData(dec, employee);
+		}
+		return employees;
+	}
+
+	public void delete(Integer id) {
+		employeeMapper.deleteEmpById(id);
+	}
+
+	public void update(Employee employee)
+	{
+		SingleData enc = new SingleData();
+		enc.add("last_name", KsignConstants.NAME);
+		enc.add("jumin_number", KsignConstants.JUMIN);
+		enc.add("day_of_birth", KsignConstants.DOB);
+		enc.add("sex", KsignConstants.GENDER);
+		ksignService.encryptMultiData(enc, employee);
+
+		employeeMapper.updateEmp(employee);
+	}
+
+	public void save(Employee employee) {
+		Department dept = deptMapper.getDeptById(employee.getDept().getId());
+		employee.setDept(dept);
+
+		SingleData enc = new SingleData();
+		enc.add("last_name", KsignConstants.NAME);
+		enc.add("jumin_number", KsignConstants.JUMIN);
+		enc.add("day_of_birth", KsignConstants.DOB);
+		enc.add("sex", KsignConstants.GENDER);
+		ksignService.encryptMultiData(enc, employee);
+
+		employeeMapper.addEmp(employee);
+	}
+
+	public Employee getEmpById(Integer id) {
+		Employee employee = employeeMapper.getEmpById(id);
+		SingleData dec = new SingleData();
+		dec.add("last_name", KsignConstants.NAME);
+		dec.add("jumin_number", KsignConstants.JUMIN);
+		dec.add("day_of_birth", KsignConstants.DOB);
+		dec.add("sex", KsignConstants.GENDER);
+		ksignService.decryptMultiData(dec, employee);
+		return employee;
+	}
+
+	public List<Employee> getEmpsByPage(Integer pageIndex,Integer size) {
+		List<Employee> employees = employeeMapper.getEmpsByPage(pageIndex,size);
+		for (Employee employee : employees) {
+			SingleData dec = new SingleData();
+			dec.add("last_name", KsignConstants.NAME);
+			dec.add("jumin_number", KsignConstants.JUMIN);
+			dec.add("day_of_birth", KsignConstants.DOB);
+			dec.add("sex", KsignConstants.GENDER);
+			ksignService.decryptMultiData(dec, employee);
+		}
+		return employees;
+	}
+
+	public int getLength()
+	{
+		return employeeMapper.getLength();
+	}
+
+	public List<Employee>  query(String condition) {
+		List<Employee> employees = employeeMapper.query(condition);
+		for (Employee employee : employees) {
+			SingleData dec = new SingleData();
+			dec.add("last_name", KsignConstants.NAME);
+			dec.add("jumin_number", KsignConstants.JUMIN);
+			dec.add("day_of_birth", KsignConstants.DOB);
+			dec.add("sex", KsignConstants.GENDER);
+			ksignService.decryptMultiData(dec, employee);
+		}
+		return employees;
+	}
+
+	public List<Map<String, Object>> getDatas() {
+		List<Map<String, Object>> data = employeeMapper.getDatas();
+		for (Map<String, Object> map : data) {
+			SingleData dec = new SingleData();
+			dec.add("last_name", KsignConstants.NAME);
+			dec.add("jumin_number", KsignConstants.JUMIN);
+			dec.add("day_of_birth", KsignConstants.DOB);
+			dec.add("sex", KsignConstants.GENDER);
+			ksignService.decryptMultiData(dec, map);
+		}
+		return data;
+	}
+
+	public List<Map<String, Object>> getPer() {
+		List<Map<String, Object>> per = employeeMapper.getPer();
+		for (Map<String, Object> map : per) {
+			SingleData dec = new SingleData();
+			dec.add("last_name", KsignConstants.NAME);
+			dec.add("jumin_number", KsignConstants.JUMIN);
+			dec.add("day_of_birth", KsignConstants.DOB);
+			dec.add("sex", KsignConstants.GENDER);
+			ksignService.decryptMultiData(dec, map);
+		}
+		return per;
+	}
+
+	public User login(User user) {
+		User u = employeeMapper.login(user.getUserName(),user.getPassword());
+		return u;
+	}
+
+	public User getUserInfo(User user) {
+		User u = employeeMapper.getUserInfo(user.getUserName(),user.getPassword());
+		return u;
+	}
+}
+
+
+
+---
+
+## 출력 형식 (반드시 준수)
+
+각 파일에 대해 **반드시 아래 형식**으로 출력하세요:
+
+```
+======FILE======
+파일명.java
+======REASON======
+수정 이유 또는 건너뛴 이유
+======MODIFIED_CODE======
+수정된 전체 소스 코드 (action이 SKIP인 경우 빈 문자열)
+======END======
+```
+
+### 예시 (수정이 필요한 경우)
+
+```
+======FILE======
+EmployeeService.java
+======REASON======
+employee 테이블 INSERT 전 name, phone 칼럼 암호화 코드 추가
+======MODIFIED_CODE======
+package com.example.service;
+
+import com.ksign.KsignConstants;
+import com.ksign.SingleData;
+
+public class EmployeeService {
+
+    @Autowired
+    private KsignService ksignService;
+
+    @Autowired
+    private EmployeeDao employeeDao;
+
+    public void saveEmployee(MultiData list) {
+        // 암호화 처리
+        SingleData ksignEnc = new SingleData();
+        ksignEnc.add("name", KsignConstants.NAME);
+        ksignEnc.add("phone", KsignConstants.TEL_NO);
+        ksignService.encryptMultiData(ksignEnc, list);
+
+        employeeDao.insert(list);
+    }
+}
+======END======
+```
+
+### 예시 (수정이 불필요한 경우)
+
+```
+======FILE======
+EmployeeController.java
+======REASON======
+SKIP - 이 컨트롤러는 암호화 대상 칼럼을 직접 다루지 않음
+======MODIFIED_CODE======
+
+======END======
+```
+
+---
+
+## 현재 레이어: 
+
+---
+
+## 지금 코드 수정을 시작하세요
+
+위 수정 지침에 따라 각 파일의 코드를 수정하고, 지정된 출력 형식으로 결과를 출력하세요.
+**모든 대상 파일에 대해 출력해야 합니다** (수정 여부와 관계없이).

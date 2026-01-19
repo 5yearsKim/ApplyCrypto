@@ -38,6 +38,23 @@ class TypeHandlerConfig(BaseModel):
     output_dir: str = Field(..., description="Type Handler 출력 디렉터리")
 
 
+class TwoStepConfig(BaseModel):
+    """2-Step LLM 협업 설정 (Planning + Execution)"""
+
+    planning_provider: Literal[
+        "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"
+    ] = Field(..., description="Planning 단계에서 사용할 LLM 프로바이더")
+    planning_model: Optional[str] = Field(
+        None, description="Planning 단계에서 사용할 모델 ID (예: gpt-oss-120b)"
+    )
+    execution_provider: Literal[
+        "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"
+    ] = Field(..., description="Execution 단계에서 사용할 LLM 프로바이더")
+    execution_model: Optional[str] = Field(
+        None, description="Execution 단계에서 사용할 모델 ID (예: codestral-2508)"
+    )
+
+
 class Configuration(BaseModel):
     target_project: str = Field(..., description="대상 프로젝트 루트 경로")
     type_handler: Optional[TypeHandlerConfig] = Field(
@@ -63,8 +80,11 @@ class Configuration(BaseModel):
     access_tables: List[AccessTable] = Field(
         ..., description="암호화 대상 테이블 및 칼럼 정보"
     )
-    modification_type: Literal["TypeHandler", "ControllerOrService", "ServiceImplOrBiz"] = Field(
-        ..., description="코드 수정 타입"
+    modification_type: Literal[
+        "TypeHandler", "ControllerOrService", "ServiceImplOrBiz", "TwoStep"
+    ] = Field(..., description="코드 수정 타입")
+    two_step_config: Optional[TwoStepConfig] = Field(
+        None, description="2-Step LLM 협업 설정 (modification_type이 TwoStep일 때 필수)"
     )
     llm_provider: Literal[
         "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"

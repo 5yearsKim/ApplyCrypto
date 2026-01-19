@@ -409,6 +409,67 @@ class BaseCodeGenerator(ABC):
         # JSON 문자열로 변환
         return json.dumps(call_stacks_list, indent=2, ensure_ascii=False)
 
+    def _get_sql_queries_for_prompt(
+        self, table_access_info: TableAccessInfo, file_paths: List[str] = None
+    ) -> str:
+        """
+        Planning LLM에 전달할 SQL 쿼리 정보를 포맷팅합니다.
+
+        Args:
+            table_access_info: 테이블 접근 정보
+            file_paths: 파일 경로 리스트 (지정 시 관련 SQL만 필터링)
+
+        Returns:
+            str: JSON 형식의 SQL 쿼리 정보 문자열
+        """
+        relevant_queries = []
+
+        # 파일 경로에서 클래스명 추출 (필터링용)
+        file_class_names = set()
+        if file_paths:
+            for file_path in file_paths:
+                class_name = Path(file_path).stem
+                file_class_names.add(class_name)
+
+        for sql_query in table_access_info.sql_queries:
+            # 파일 경로가 지정된 경우 관련 SQL만 필터링
+            if file_paths and file_class_names:
+                call_stacks = sql_query.get("call_stacks", [])
+                is_relevant = False
+
+                for call_stack in call_stacks:
+                    if not isinstance(call_stack, list):
+                        continue
+                    for method_sig in call_stack:
+                        if not isinstance(method_sig, str):
+                            continue
+                        # method_signature에서 클래스명 추출
+                        if "." in method_sig:
+                            method_class_name = method_sig.split(".")[0]
+                        else:
+                            method_class_name = method_sig
+                        if method_class_name in file_class_names:
+                            is_relevant = True
+                            break
+                    if is_relevant:
+                        break
+
+                if not is_relevant:
+                    continue
+
+            # SQL 쿼리 정보 추출
+            relevant_queries.append(
+                {
+                    "id": sql_query.get("id"),
+                    "query_type": sql_query.get("query_type"),
+                    "sql": sql_query.get("sql"),
+                    "call_stacks": sql_query.get("call_stacks", []),
+                    "source_file": sql_query.get("source_file_path"),
+                }
+            )
+
+        return json.dumps(relevant_queries, indent=2, ensure_ascii=False)
+
     def _get_cache_key(self, prompt: str) -> str:
         """프롬프트의 캐시 키를 생성합니다."""
         return hashlib.md5(prompt.encode("utf-8")).hexdigest()
