@@ -11,9 +11,11 @@ Two-Step Code Generator
 
 import json
 import logging
+import re
 from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import tiktoken
 from jinja2 import Template
@@ -232,6 +234,209 @@ class TwoStepCodeGenerator(BaseCodeGenerator):
                 logger.error(f"Failed to read file: {file_path} - {e}")
         return "\n\n".join(snippets)
 
+    def _read_file_contents_indexed(
+        self, file_paths: List[str]
+    ) -> Tuple[str, Dict[int, str], Dict[str, str]]:
+        """
+        파일들의 내용을 인덱스와 함께 읽어서 반환합니다.
+
+        Args:
+            file_paths: 파일 경로 리스트
+
+        Returns:
+            Tuple[str, Dict[int, str], Dict[str, str]]:
+                - 인덱스가 포함된 파일 내용 문자열
+                - 인덱스 -> 파일 경로 매핑
+                - 파일 경로 -> 파일 내용 매핑 (시그니처 매칭용)
+        """
+        snippets = []
+        index_to_path: Dict[int, str] = {}
+        path_to_content: Dict[str, str] = {}
+
+        for idx, file_path in enumerate(file_paths, start=1):
+            try:
+                path_obj = Path(file_path)
+                if path_obj.exists():
+                    with open(path_obj, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    # 인덱스 형식으로 파일 헤더 생성
+                    snippets.append(
+                        f"[FILE_{idx}] {path_obj.name}\n"
+                        f"=== Content ===\n{content}"
+                    )
+                    index_to_path[idx] = file_path
+                    path_to_content[file_path] = content
+                else:
+                    logger.warning(f"File not found: {file_path}")
+            except Exception as e:
+                logger.error(f"Failed to read file: {file_path} - {e}")
+
+        return "\n\n".join(snippets), index_to_path, path_to_content
+
+    def _extract_code_signature(self, code: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Java 코드에서 패키지명과 클래스명을 추출합니다.
+
+        Args:
+            code: Java 소스 코드
+
+        Returns:
+            Tuple[Optional[str], Optional[str]]: (패키지명, 클래스명)
+        """
+        package_name = None
+        class_name = None
+
+        # 패키지명 추출
+        package_match = re.search(r'package\s+([\w.]+)\s*;', code)
+        if package_match:
+            package_name = package_match.group(1)
+
+        # 클래스명 추출 (class, interface, enum)
+        class_match = re.search(
+            r'(?:public\s+)?(?:abstract\s+)?(?:class|interface|enum)\s+(\w+)',
+            code
+        )
+        if class_match:
+            class_name = class_match.group(1)
+
+        return package_name, class_name
+
+    def _match_by_code_signature(
+        self, modified_code: str, path_to_content: Dict[str, str]
+    ) -> Optional[str]:
+        """
+        수정된 코드의 시그니처로 원본 파일을 찾습니다.
+
+        Args:
+            modified_code: LLM이 생성한 수정된 코드
+            path_to_content: 파일 경로 -> 원본 내용 매핑
+
+        Returns:
+            Optional[str]: 매칭된 파일 경로, 없으면 None
+        """
+        mod_package, mod_class = self._extract_code_signature(modified_code)
+
+        if not mod_class:
+            # 클래스명을 추출할 수 없으면 매칭 불가
+            return None
+
+        for file_path, original_content in path_to_content.items():
+            orig_package, orig_class = self._extract_code_signature(original_content)
+
+            # 클래스명이 일치하고, 패키지명도 일치하거나 둘 다 없는 경우
+            if orig_class == mod_class:
+                if mod_package == orig_package:
+                    logger.info(
+                        f"코드 시그니처 매칭 성공: {mod_package}.{mod_class} -> {file_path}"
+                    )
+                    return file_path
+                elif mod_package is None or orig_package is None:
+                    # 패키지가 없는 경우에도 클래스명만으로 매칭 시도
+                    logger.info(
+                        f"코드 시그니처 매칭 (클래스명만): {mod_class} -> {file_path}"
+                    )
+                    return file_path
+
+        return None
+
+    def _fuzzy_match_filename(
+        self, llm_filename: str, file_mapping: Dict[str, str]
+    ) -> Optional[str]:
+        """
+        Fuzzy matching으로 유사한 파일명을 찾습니다.
+
+        Args:
+            llm_filename: LLM이 반환한 파일명
+            file_mapping: 파일명 -> 파일 경로 매핑
+
+        Returns:
+            Optional[str]: 매칭된 파일 경로, 없으면 None
+        """
+        best_match = None
+        best_ratio = 0.0
+        threshold = 0.7  # 70% 이상 유사해야 매칭
+
+        llm_filename_lower = llm_filename.lower()
+
+        for filename, filepath in file_mapping.items():
+            ratio = SequenceMatcher(
+                None, llm_filename_lower, filename.lower()
+            ).ratio()
+            if ratio > best_ratio and ratio >= threshold:
+                best_ratio = ratio
+                best_match = filepath
+
+        if best_match:
+            logger.info(
+                f"Fuzzy 매칭 성공: {llm_filename} -> {Path(best_match).name} "
+                f"(유사도: {best_ratio:.1%})"
+            )
+
+        return best_match
+
+    def _resolve_file_path(
+        self,
+        llm_file_identifier: str,
+        modified_code: str,
+        index_to_path: Dict[int, str],
+        file_mapping: Dict[str, str],
+        path_to_content: Dict[str, str],
+    ) -> Tuple[Optional[str], str]:
+        """
+        여러 전략을 순차적으로 시도하여 파일 경로를 해결합니다.
+
+        Args:
+            llm_file_identifier: LLM이 반환한 파일 식별자 (인덱스 또는 파일명)
+            modified_code: LLM이 생성한 수정된 코드
+            index_to_path: 인덱스 -> 파일 경로 매핑
+            file_mapping: 파일명 -> 파일 경로 매핑
+            path_to_content: 파일 경로 -> 원본 내용 매핑
+
+        Returns:
+            Tuple[Optional[str], str]: (해결된 파일 경로, 매칭 방법)
+        """
+        # 1. 인덱스 매칭 시도 (FILE_1, FILE_2, ...)
+        index_match = re.match(r'FILE_(\d+)', llm_file_identifier.strip(), re.IGNORECASE)
+        if index_match:
+            idx = int(index_match.group(1))
+            if idx in index_to_path:
+                logger.debug(f"인덱스 매칭 성공: FILE_{idx} -> {index_to_path[idx]}")
+                return index_to_path[idx], "index"
+
+        # 2. 정확한 파일명 매칭 시도
+        clean_name = llm_file_identifier.strip()
+        # 경로가 포함된 경우 파일명만 추출
+        if '/' in clean_name or '\\' in clean_name:
+            clean_name = Path(clean_name).name
+
+        if clean_name in file_mapping:
+            logger.debug(f"정확한 파일명 매칭 성공: {clean_name}")
+            return file_mapping[clean_name], "exact"
+
+        # 3. 대소문자 무시 매칭
+        lower_mapping = {k.lower(): v for k, v in file_mapping.items()}
+        if clean_name.lower() in lower_mapping:
+            logger.debug(f"대소문자 무시 매칭 성공: {clean_name}")
+            return lower_mapping[clean_name.lower()], "case_insensitive"
+
+        # 4. 코드 시그니처 매칭 (가장 신뢰도 높음)
+        if modified_code and modified_code.strip():
+            signature_match = self._match_by_code_signature(modified_code, path_to_content)
+            if signature_match:
+                return signature_match, "signature"
+
+        # 5. Fuzzy 매칭 (마지막 수단)
+        fuzzy_match = self._fuzzy_match_filename(clean_name, file_mapping)
+        if fuzzy_match:
+            return fuzzy_match, "fuzzy"
+
+        # 매칭 실패
+        logger.warning(
+            f"파일 경로 해결 실패: {llm_file_identifier}. "
+            f"시도한 방법: index, exact, case_insensitive, signature, fuzzy"
+        )
+        return None, "failed"
+
     def _create_planning_prompt(
         self,
         modification_context: ModificationContext,
@@ -291,7 +496,7 @@ class TwoStepCodeGenerator(BaseCodeGenerator):
         self,
         modification_context: ModificationContext,
         modification_instructions: Dict[str, Any],
-    ) -> str:
+    ) -> Tuple[str, Dict[int, str], Dict[str, str], Dict[str, str]]:
         """
         Step 2 (Execution) 프롬프트를 생성합니다.
 
@@ -300,12 +505,21 @@ class TwoStepCodeGenerator(BaseCodeGenerator):
             modification_instructions: Step 1에서 생성된 수정 지침
 
         Returns:
-            str: Execution 프롬프트
+            Tuple[str, Dict[int, str], Dict[str, str], Dict[str, str]]:
+                - Execution 프롬프트
+                - 인덱스 -> 파일 경로 매핑
+                - 파일명 -> 파일 경로 매핑
+                - 파일 경로 -> 파일 내용 매핑
         """
-        # 소스 파일 내용
-        source_files_str = self._read_file_contents(modification_context.file_paths)
+        # 소스 파일 내용 (인덱스 형식)
+        source_files_str, index_to_path, path_to_content = (
+            self._read_file_contents_indexed(modification_context.file_paths)
+        )
 
-        # 컨텍스트 파일 (VO) 내용
+        # 파일명 -> 파일 경로 매핑 생성
+        file_mapping = {Path(fp).name: fp for fp in modification_context.file_paths}
+
+        # 컨텍스트 파일 (VO) 내용 - 기존 형식 유지 (수정 대상 아님)
         context_files_str = self._read_file_contents(
             modification_context.context_files or []
         )
@@ -326,7 +540,9 @@ class TwoStepCodeGenerator(BaseCodeGenerator):
 
         # 템플릿 렌더링
         template_str = self._load_template(self.execution_template_path)
-        return self._render_template(template_str, variables)
+        prompt = self._render_template(template_str, variables)
+
+        return prompt, index_to_path, file_mapping, path_to_content
 
     def _parse_planning_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -370,25 +586,32 @@ class TwoStepCodeGenerator(BaseCodeGenerator):
             raise ValueError(f"Planning 응답 JSON 파싱 실패: {e}")
 
     def _parse_execution_response(
-        self, response: Dict[str, Any], file_paths: List[str]
+        self,
+        response: Dict[str, Any],
+        index_to_path: Dict[int, str],
+        file_mapping: Dict[str, str],
+        path_to_content: Dict[str, str],
     ) -> List[Dict[str, Any]]:
         """
         Step 2 (Execution) LLM 응답을 파싱합니다.
 
-        TwoStep 전용: REASON 섹션 없이 FILE → MODIFIED_CODE → END 형식을 파싱합니다.
-        reason은 Planning 단계에서 생성되었으므로 Execution에서는 생성하지 않습니다.
+        복합 전략을 사용하여 파일 경로를 해결합니다:
+        1. 인덱스 매칭 (FILE_1, FILE_2, ...)
+        2. 정확한 파일명 매칭
+        3. 대소문자 무시 매칭
+        4. 코드 시그니처 매칭 (package + class name)
+        5. Fuzzy 매칭
 
         형식:
-            ======FILE======
-            EmployeeService.java
-            ======MODIFIED_CODE======
-            package com.example;
-            ...
+            ======FILE_1======
+            (수정된 코드)
             ======END======
 
         Args:
             response: LLM 응답
-            file_paths: 원본 파일 경로 리스트
+            index_to_path: 인덱스 -> 파일 경로 매핑
+            file_mapping: 파일명 -> 파일 경로 매핑
+            path_to_content: 파일 경로 -> 원본 내용 매핑
 
         Returns:
             List[Dict[str, Any]]: 파싱된 수정 정보 리스트
@@ -397,52 +620,78 @@ class TwoStepCodeGenerator(BaseCodeGenerator):
         if not content:
             raise ValueError("Execution LLM 응답에 content가 없습니다.")
 
-        # 파일명 -> 절대 경로 매핑 생성
-        file_mapping = {Path(fp).name: fp for fp in file_paths}
-
         modifications = []
         content = content.strip()
 
         # ======END====== 기준으로 블록 분리
         blocks = content.split("======END======")
 
+        # 매칭 통계
+        match_stats = {"index": 0, "exact": 0, "case_insensitive": 0,
+                       "signature": 0, "fuzzy": 0, "failed": 0}
+
         for block in blocks:
             block = block.strip()
-            if not block or "======FILE======" not in block:
+            if not block:
+                continue
+
+            # FILE 마커 찾기 (======FILE_1====== 또는 ======FILE====== 형식 모두 지원)
+            file_marker_match = re.search(r'======FILE(?:_(\d+))?======', block)
+            if not file_marker_match:
                 continue
 
             try:
-                # FILE과 MODIFIED_CODE 섹션 추출 (REASON 없음)
-                file_name = self._extract_section(
-                    block, "======FILE======", "======MODIFIED_CODE======"
-                )
+                # 파일 식별자 추출
+                if file_marker_match.group(1):
+                    # 인덱스 형식: ======FILE_1======
+                    file_identifier = f"FILE_{file_marker_match.group(1)}"
+                else:
+                    # 기존 형식: ======FILE======\nFileName.java
+                    file_identifier = self._extract_section(
+                        block, "======FILE======", "======MODIFIED_CODE======"
+                    ).strip()
+
+                # MODIFIED_CODE 섹션 추출
                 modified_code = self._extract_section(
                     block, "======MODIFIED_CODE======", "======END======"
+                ).strip()
+
+                # 복합 전략으로 파일 경로 해결
+                resolved_path, match_method = self._resolve_file_path(
+                    llm_file_identifier=file_identifier,
+                    modified_code=modified_code,
+                    index_to_path=index_to_path,
+                    file_mapping=file_mapping,
+                    path_to_content=path_to_content,
                 )
 
-                # 파일명 정리
-                file_name = file_name.strip()
+                match_stats[match_method] += 1
 
-                # 파일명을 절대 경로로 변환
-                if file_name in file_mapping:
-                    file_path = file_mapping[file_name]
-                else:
-                    # 매핑에 없으면 파일명 그대로 사용 (절대 경로일 수도 있음)
-                    file_path = file_name
-                    logger.warning(
-                        f"파일 매핑에서 찾을 수 없음: {file_name}. 원본 값 사용."
+                if resolved_path:
+                    modifications.append(
+                        {
+                            "file_path": resolved_path,
+                            "modified_code": modified_code,
+                            "match_method": match_method,
+                        }
                     )
-
-                modifications.append(
-                    {
-                        "file_path": file_path,
-                        "modified_code": modified_code.strip(),
-                    }
-                )
+                else:
+                    logger.error(
+                        f"파일 경로 해결 실패: {file_identifier}. "
+                        f"이 파일의 수정 사항은 건너뜁니다."
+                    )
 
             except Exception as e:
                 logger.warning(f"Execution 블록 파싱 중 오류 (건너뜀): {e}")
                 continue
+
+        # 매칭 통계 로깅
+        logger.info(
+            f"파일 매칭 통계: 인덱스={match_stats['index']}, "
+            f"정확={match_stats['exact']}, 대소문자무시={match_stats['case_insensitive']}, "
+            f"시그니처={match_stats['signature']}, Fuzzy={match_stats['fuzzy']}, "
+            f"실패={match_stats['failed']}"
+        )
 
         if not modifications:
             raise Exception(
@@ -450,7 +699,7 @@ class TwoStepCodeGenerator(BaseCodeGenerator):
             )
 
         logger.info(
-            f"{len(modifications)}개 파일 수정 정보를 파싱했습니다 (TwoStep Execution 형식)."
+            f"{len(modifications)}개 파일 수정 정보를 파싱했습니다 (복합 매칭 전략 사용)."
         )
         return modifications
 
@@ -577,19 +826,26 @@ class TwoStepCodeGenerator(BaseCodeGenerator):
             logger.info(f"Provider: {self.two_step_config.execution_provider}")
             logger.info(f"Model: {self.two_step_config.execution_model}")
 
-            execution_prompt = self._create_execution_prompt(
-                modification_context, modification_instructions
+            # 인덱스 형식의 프롬프트 생성 및 매핑 정보 획득
+            execution_prompt, index_to_path, file_mapping, path_to_content = (
+                self._create_execution_prompt(
+                    modification_context, modification_instructions
+                )
             )
             logger.debug(f"Execution 프롬프트 길이: {len(execution_prompt)} chars")
+            logger.debug(f"파일 인덱스 매핑: {list(index_to_path.keys())}")
 
             execution_response = self.execution_provider.call(execution_prompt)
             execution_tokens = execution_response.get("tokens_used", 0)
             total_tokens_used += execution_tokens
             logger.info(f"Execution LLM 응답 완료 (토큰: {execution_tokens})")
 
-            # Execution 응답 파싱
+            # Execution 응답 파싱 (복합 매칭 전략 사용)
             parsed_modifications = self._parse_execution_response(
-                execution_response, modification_context.file_paths
+                response=execution_response,
+                index_to_path=index_to_path,
+                file_mapping=file_mapping,
+                path_to_content=path_to_content,
             )
 
             # Planning 지침에서 파일명 -> reason 매핑 생성

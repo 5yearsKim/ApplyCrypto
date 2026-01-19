@@ -17,6 +17,7 @@ Follow the **modification instructions below exactly** to modify the code.
 4. **No code omission**: Do NOT use expressions like `// ... existing code ...` or `// unchanged`
 5. **For SKIP action**: If action is "SKIP", output empty MODIFIED_CODE section
 6. **No reasoning needed**: Do NOT add your own reasoning or explanations. Just execute the instructions.
+7. **Use FILE INDEX**: Output must use the exact file index (FILE_1, FILE_2, etc.) as shown in the source files section
 
 ---
 
@@ -27,6 +28,9 @@ Follow the **modification instructions below exactly** to modify the code.
 ---
 
 ## Original Source Files ({{ file_count }} files)
+
+**IMPORTANT**: Each file is labeled with an index like `[FILE_1]`, `[FILE_2]`, etc.
+Use these **exact indices** in your output.
 
 {{ source_files }}
 
@@ -42,21 +46,24 @@ Reference files for understanding data structures. **DO NOT output these files.*
 
 ## Output Format (Must Follow Exactly)
 
-For each file, **output in the following format**:
+For each file, **use the file index** from the source files section and output in the following format:
 
 ```
-======FILE======
-FileName.java
+======FILE_1======
 ======MODIFIED_CODE======
 Full modified source code (empty if action is SKIP)
 ======END======
 ```
 
-### Example (When modification is needed)
+**CRITICAL**:
+- Use `======FILE_1======`, `======FILE_2======`, etc. (matching the indices from source files)
+- Do NOT write the filename - use the index number only
+- The index ensures correct file matching
+
+### Example (When modification is needed for FILE_1)
 
 ```
-======FILE======
-EmployeeService.java
+======FILE_1======
 ======MODIFIED_CODE======
 package com.example.service;
 
@@ -82,11 +89,10 @@ public class EmployeeService {
 ======END======
 ```
 
-### Example (When action is SKIP)
+### Example (When action is SKIP for FILE_2)
 
 ```
-======FILE======
-EmployeeController.java
+======FILE_2======
 ======MODIFIED_CODE======
 
 ======END======
@@ -105,9 +111,10 @@ Execute the modification instructions for each file and output results in the sp
 
 ### Important Reminders
 
-1. **Add necessary imports**: Add `import com.ksign.KsignUtil;` at the top of the file if not present
-2. **Add KsignUtil field**: If the class doesn't have a ksignUtil field, add `@Autowired private KsignUtil ksignUtil;`
-3. **Use correct Policy IDs**: Name → "P017", Date of Birth → "P018", Resident Number → "P019"
-4. **Follow insertion_point exactly**: Insert encryption/decryption code at the exact location specified in the instructions
-5. **Preserve all existing code**: Do not remove or modify any existing code other than the encryption/decryption additions
-6. **No explanations**: Do not add any explanations or reasoning. Just output the code.
+1. **Use file indices**: Output `======FILE_1======`, `======FILE_2======`, etc. - NOT filenames
+2. **Add necessary imports**: Add `import com.ksign.KsignUtil;` at the top of the file if not present
+3. **Add KsignUtil field**: If the class doesn't have a ksignUtil field, add `@Autowired private KsignUtil ksignUtil;`
+4. **Use correct Policy IDs**: Name -> "P017", Date of Birth -> "P018", Resident Number -> "P019"
+5. **Follow insertion_point exactly**: Insert encryption/decryption code at the exact location specified in the instructions
+6. **Preserve all existing code**: Do not remove or modify any existing code other than the encryption/decryption additions
+7. **No explanations**: Do not add any explanations or reasoning. Just output the code.
