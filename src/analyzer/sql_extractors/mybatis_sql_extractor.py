@@ -45,6 +45,15 @@ class MyBatisSQLExtractor(SQLExtractor):
         super().__init__(config=config, xml_parser=xml_parser, java_parse_results=java_parse_results, call_graph_builder=call_graph_builder)
         self.logger = logging.getLogger(__name__)
 
+    def get_layer_name(self) -> str:
+        """
+        MyBatis 레이어명 반환 (서브클래스에서 오버라이드 가능)
+
+        Returns:
+            str: 레이어명 (기본값: "repository")
+        """
+        return "repository"
+
     @override
     def extract_from_files(
         self, source_files: List[SourceFile]
@@ -170,7 +179,7 @@ class MyBatisSQLExtractor(SQLExtractor):
         layer_files: Dict[str, Set[str]] = defaultdict(set)
         all_files: Set[str] = set()
 
-        layer_name = "repository"
+        layer_name = self.get_layer_name()
 
         strategy_specific = sql_query.get("strategy_specific", {})
         

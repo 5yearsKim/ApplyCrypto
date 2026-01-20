@@ -46,6 +46,13 @@ class SQLExtractorFactory:
                 config=config, xml_parser=xml_parser, java_parse_results=java_parse_results, call_graph_builder=call_graph_builder
             )
 
+        elif sql_wrapping_type == "mybatis_ccs":
+            from .sql_extractors.mybatis_ccs_sql_extractor import MybatisCCSSQLExtractor
+
+            return MybatisCCSSQLExtractor(
+                config=config, xml_parser=xml_parser, java_parse_results=java_parse_results, call_graph_builder=call_graph_builder
+            )
+
         elif sql_wrapping_type == "jdbc":
             if "Anyframe" in config.framework_type:
                 from .sql_extractors.anyframe_jdbc_sql_extractor import AnyframeJDBCSQLExtractor
@@ -69,6 +76,6 @@ class SQLExtractorFactory:
         else:
             raise ValueError(
                 f"지원하지 않는 sql_wrapping_type: {config.sql_wrapping_type}. "
-                f"가능한 값: mybatis, jdbc, jpa"
+                f"가능한 값: mybatis, mybatis_ccs, jdbc, jpa"
             )
 

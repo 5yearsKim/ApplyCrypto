@@ -8,6 +8,9 @@ from modifier.context_generator.jdbc_context_generator import (
 from modifier.context_generator.mybatis_context_generator import (
     MybatisContextGenerator,
 )
+from modifier.context_generator.mybatis_ccs_context_generator import (
+    MybatisCCSContextGenerator,
+)
 
 
 class ContextGeneratorFactory:
@@ -33,5 +36,8 @@ class ContextGeneratorFactory:
             return JdbcContextGenerator(config, code_generator)
         elif config.sql_wrapping_type == "mybatis":
             return MybatisContextGenerator(config, code_generator)
+        elif config.sql_wrapping_type == "mybatis_ccs":
+            # mybatis_ccs는 CCS 레이어명(ctl, svcimpl, dqm)을 사용
+            return MybatisCCSContextGenerator(config, code_generator)
 
         return PerLayerContextGenerator(config, code_generator)
