@@ -69,9 +69,18 @@ class CodeGeneratorFactory:
             # llm_provider 파라미터는 사용하지 않음
             return TwoStepCodeGenerator(config=config)
 
+        elif modification_type == "ThreeStep":
+            from .three_step_type.three_step_code_generator import (
+                ThreeStepCodeGenerator,
+            )
+
+            # ThreeStep은 내부에서 자체적으로 LLM Provider를 생성하므로
+            # llm_provider 파라미터는 사용하지 않음
+            return ThreeStepCodeGenerator(config=config)
+
         else:
             raise ValueError(
                 f"지원하지 않는 modification_type: {modification_type}. "
-                f"가능한 값: TypeHandler, ControllerOrService, ServiceImplOrBiz, TwoStep"
+                f"가능한 값: TypeHandler, ControllerOrService, ServiceImplOrBiz, TwoStep, ThreeStep"
             )
 

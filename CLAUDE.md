@@ -36,6 +36,10 @@ python main.py list --modified     # Modified files history
 # Modify code (insert encryption/decryption logic)
 python main.py modify --config config.json --dry-run  # Preview only
 python main.py modify --config config.json            # Apply changes
+python main.py modify --config config.json --debug    # Show diff with line numbers
+
+# Clear backup files
+python main.py clear
 
 # Launch Streamlit UI
 python run_ui.py
@@ -45,6 +49,9 @@ python run_ui.py
 ```bash
 # Run all tests
 pytest
+
+# Run specific test file
+pytest tests/test_db_access_analyzer.py
 
 # Run tests with coverage
 pytest --cov=src --cov-report=html
@@ -56,6 +63,9 @@ pytest --cov=src --cov-report=html
 isort .
 ruff format
 ruff check --fix
+
+# Clear backup files (generated during modification)
+python main.py clear
 ```
 
 ### Environment Variables
@@ -83,11 +93,21 @@ The system follows a strict layered architecture with clear separation of concer
 ### Key Design Patterns
 
 **Strategy Pattern** is used extensively:
-- `LLMProvider`: WatsonX, OpenAI, Claude implementations
-- `EndpointExtractionStrategy`: Framework-specific endpoint extraction (SpringMVC, AnyframeSarangOn)
-- `SQLExtractor`: SQL wrapping type strategies (MyBatis, JDBC, JPA, Anyframe JDBC)
-- `BaseCodeGenerator`: Modification type strategies (TypeHandler, ControllerOrService, ServiceImplOrBiz)
-- `ContextGenerator`: Context generation strategies (MyBatis, JDBC, PerLayer)
+- `LLMProvider`: WatsonX, WatsonX On-Prem, OpenAI, Claude implementations
+- `EndpointExtractionStrategy`: Framework-specific endpoint extraction
+  - `SpringMVCEndpointExtraction`, `AnyframeSarangOnEndpointExtraction`
+  - `AnyframeCCSEndpointExtraction`, `AnyframeCCSBatchEndpointExtraction`
+  - `AnyframeBatEtcEndpointExtraction`
+- `SQLExtractor`: SQL wrapping type strategies
+  - `MyBatisSQLExtractor`, `MyBatisCCSSQLExtractor`, `MyBatisCCSBatchSQLExtractor`
+  - `JDBCSQLExtractor`, `JPASQLExtractor`
+  - `AnyframeJDBCSQLExtractor`, `AnyframeJDBCBatSQLExtractor`
+- `BaseCodeGenerator`: Modification type strategies
+  - `TypeHandlerCodeGenerator`, `ControllerServiceCodeGenerator`
+  - `ServiceImplBizCodeGenerator`, `TwoStepCodeGenerator`
+- `ContextGenerator`: Context generation strategies
+  - `MybatisContextGenerator`, `MybatisCCSContextGenerator`, `MybatisCCSBatchContextGenerator`
+  - `JdbcContextGenerator`, `PerLayerContextGenerator`
 
 **Factory Pattern**:
 - `LLMFactory`: Creates appropriate LLM provider based on config
@@ -100,12 +120,29 @@ The system follows a strict layered architecture with clear separation of concer
 
 The `config.json` file drives the entire workflow. Critical fields:
 
-- `framework_type`: Framework detection strategy (`SpringMVC`, `AnyframeSarangOn`, etc.)
-- `sql_wrapping_type`: How SQL is accessed (`mybatis`, `jdbc`, `jpa`)
-- `modification_type`: Where to insert encryption logic (`TypeHandler`, `ControllerOrService`, `ServiceImplOrBiz`)
-- `llm_provider`: AI model to use (`watsonx_ai`, `claude_ai`, `openai`, `mock`)
+- `framework_type`: Framework detection strategy
+  - `SpringMVC`, `AnyframeSarangOn`, `AnyframeOld`, `AnyframeEtc`
+  - `AnyframeCCS`, `anyframe_ccs_batch`: CCS framework variants
+  - `SpringBatQrts`, `AnyframeBatSarangOn`, `AnyframeBatEtc`: Batch variants
+- `sql_wrapping_type`: How SQL is accessed
+  - `mybatis`: Standard MyBatis XML mappers
+  - `mybatis_ccs`: CCS-specific MyBatis (ctl/svcimpl/dqm layers)
+  - `mybatis_ccs_batch`: CCS Batch MyBatis (*BAT_SQL.xml files)
+  - `jdbc`, `jpa`: Other SQL wrapping methods
+- `modification_type`: Where to insert encryption logic
+  - `TypeHandler`: MyBatis TypeHandler approach
+  - `ControllerOrService`: Controller/Service layer modification
+  - `ServiceImplOrBiz`: ServiceImpl/Biz layer modification
+  - `TwoStep`: Two-phase LLM collaboration (Planning + Execution)
+- `two_step_config`: Required when `modification_type` is `TwoStep`
+  - `planning_provider`, `planning_model`: LLM for data flow analysis
+  - `execution_provider`, `execution_model`: LLM for code generation
+- `llm_provider`: AI model to use (`watsonx_ai`, `watsonx_ai_on_prem`, `claude_ai`, `openai`, `mock`)
 - `access_tables`: Tables/columns requiring encryption
 - `generate_full_source`: Whether to include full source in prompts (uses `template_full.md` instead of `template.md`)
+- `use_call_chain_mode`: Enable call chain traversal mode
+- `use_llm_parser`: Use LLM for SQL extraction when static analysis fails
+- `max_tokens_per_batch`: Maximum tokens per batch (default: 8000)
 
 See `config.example.json` for complete schema.
 
@@ -138,6 +175,42 @@ The modification workflow (`src/modifier/code_modifier.py`):
 
 6. **Result Tracking**: `ResultTracker` records all modifications with metadata
 
+### Two-Step Code Generation (TwoStep)
+
+The `TwoStepCodeGenerator` implements a two-phase LLM collaboration strategy for improved code generation quality:
+
+**Phase 1: Planning (Data Flow Analysis)**
+- Uses a model optimized for logical reasoning (e.g., GPT-OSS-120B, Claude Sonnet)
+- Analyzes data flow through the call chain
+- Identifies where encryption/decryption should be inserted
+- Generates detailed modification instructions as structured JSON
+- Template: `planning_template.md`
+
+**Phase 2: Execution (Code Generation)**
+- Uses a model optimized for code generation (e.g., Codestral-2508, GPT-4)
+- Receives planning instructions from Phase 1
+- Generates actual code patches following the plan
+- Template: `execution_template.md`
+
+**Configuration Example:**
+```json
+{
+  "modification_type": "TwoStep",
+  "two_step_config": {
+    "planning_provider": "watsonx_ai",
+    "planning_model": "ibm/granite-3-8b-instruct",
+    "execution_provider": "watsonx_ai",
+    "execution_model": "mistralai/codestral-2505"
+  }
+}
+```
+
+**Key Benefits:**
+- Separation of concerns: logical analysis vs code generation
+- Better data flow understanding before code modification
+- Reduced hallucination in code generation
+- Model specialization: use best model for each task
+
 ### Parsing Infrastructure
 
 **Java AST Parsing** (`src/parser/java_ast_parser.py`):
@@ -161,9 +234,15 @@ The modification workflow (`src/modifier/code_modifier.py`):
 Different projects wrap SQL in different ways. `SQLExtractor` implementations handle:
 
 - **MyBatis**: Extract from XML mapper files, match to Java DAO methods
+- **MyBatis CCS**: CCS-specific MyBatis with ctl/svcimpl/dqm layer structure
+- **MyBatis CCS Batch**: CCS Batch programs with `*BAT_SQL.xml` files
+  - XML structure: `<sql>/<query id="...">SQL</query></sql>`
+  - File mapping: `xxxBAT_SQL.xml → xxxBAT.java`
+  - Collects related VO files from `batvo/` directory
 - **JDBC**: Find `PreparedStatement` and SQL strings in Java code
 - **JPA**: Parse entity annotations and JPQL queries
 - **Anyframe JDBC**: Handle StringBuilder-based dynamic SQL construction
+- **Anyframe JDBC Batch**: Batch-specific JDBC SQL extraction
 - **LLM Fallback**: When static analysis fails, use LLM to extract SQL from code
 
 ### Data Persistence
@@ -204,7 +283,15 @@ Caching (`src/persistence/cache_manager.py`) stores parsed results to speed up s
 - Each code generator type has its own directory with templates
 - `template.md`: Partial source context (default)
 - `template_full.md`: Full source context (when `generate_full_source: true`)
-- Templates use Jinja2 syntax with variables like `{{source_code}}`, `{{table_info}}`
+- TwoStep generator uses separate templates:
+  - `planning_template.md`: For data flow analysis phase
+  - `execution_template.md`: For code generation phase
+- Templates use Jinja2 syntax with variables like:
+  - `{{source_code}}`: Source file content
+  - `{{table_info}}`: Table and column metadata
+  - `{{call_chain}}`: Method call chain from endpoint to DB access
+  - `{{vo_files}}`: Related Value Object files (for CCS Batch)
+  - `{{planning_result}}`: Planning phase output (for TwoStep execution)
 
 ## Testing Guidelines
 
@@ -213,6 +300,46 @@ Caching (`src/persistence/cache_manager.py`) stores parsed results to speed up s
 - Use pytest fixtures for common setup
 - Mock LLM providers with `MockLLMProvider` for testing modification logic
 - Test data in `tests/` directory or inline as strings
+
+## Recent Feature Additions
+
+The following features have been added in recent commits (as of January 2026):
+
+### CCS Batch Support (`bc57d0a`, `b4998d0`)
+- Added `MyBatisCCSBatchSQLExtractor` for `*BAT_SQL.xml` files
+- Added `MybatisCCSBatchContextGenerator` for batch-specific context generation
+- Added `AnyframeCCSBatchEndpointExtraction` strategy
+- New SQL wrapping type: `mybatis_ccs_batch`
+- Collects related VO files from `batvo/` directory
+
+### MyBatis CCS Context Generation (`4e7ebe4`)
+- Added `MybatisCCSContextGenerator` for CCS layer structure (ctl/svcimpl/dqm)
+- Added `MyBatisCCSSQLExtractor` for CCS-specific SQL extraction
+- New SQL wrapping type: `mybatis_ccs`
+
+### Hybrid Parsing Strategy (`b4998d0`)
+- Added hybrid parsing for file names generated from Execution phase
+- Improved file path resolution in TwoStep code generation
+
+### Two-Step Code Generation (`6a3f28b`)
+- Added `TwoStepCodeGenerator` with Planning + Execution phases
+- Separate LLM providers/models for each phase
+- New modification type: `TwoStep`
+- Templates: `planning_template.md`, `execution_template.md`
+
+### Call Graph Enhancements (`21a4ca0`, `a63990d`)
+- Added line number tracking in call graph
+- Enhanced argument tracking for method invocations
+- Improved call chain visualization with `--debug` option
+
+### VO File Handling (`4ad704f`, `354a47d`)
+- VO files now passed to LLM in separate prompt section
+- Logging of VO files included in prompts
+- Fixed to include all VO files from service layer
+
+### Clear Command (`9905a27`)
+- Added `python main.py clear` command to remove backup files
+- Added `--debug` option for diff with line numbers
 
 ## Korean Language Support
 

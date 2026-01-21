@@ -55,6 +55,30 @@ class TwoStepConfig(BaseModel):
     )
 
 
+class ThreeStepConfig(BaseModel):
+    """3-Step LLM 협업 설정 (VO Extraction + Planning + Execution)
+
+    1단계 (VO Extraction): VO 파일 + SQL 쿼리 → vo_info JSON 추출
+    2단계 (Planning): vo_info + 소스코드 + call chain → modification_instructions
+    3단계 (Execution): modification_instructions + 소스코드 → 수정된 코드
+
+    1/2단계는 분석용 모델 (reasoning 우수), 3단계는 코드 생성용 모델 사용
+    """
+
+    analysis_provider: Literal[
+        "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"
+    ] = Field(..., description="1/2단계 (VO Extraction + Planning)에서 사용할 LLM 프로바이더")
+    analysis_model: Optional[str] = Field(
+        None, description="1/2단계에서 사용할 모델 ID (예: gpt-oss-120b)"
+    )
+    execution_provider: Literal[
+        "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"
+    ] = Field(..., description="3단계 (Execution)에서 사용할 LLM 프로바이더")
+    execution_model: Optional[str] = Field(
+        None, description="3단계에서 사용할 모델 ID (예: codestral-2508)"
+    )
+
+
 class Configuration(BaseModel):
     target_project: str = Field(..., description="대상 프로젝트 루트 경로")
     type_handler: Optional[TypeHandlerConfig] = Field(
@@ -83,10 +107,13 @@ class Configuration(BaseModel):
         ..., description="암호화 대상 테이블 및 칼럼 정보"
     )
     modification_type: Literal[
-        "TypeHandler", "ControllerOrService", "ServiceImplOrBiz", "TwoStep"
+        "TypeHandler", "ControllerOrService", "ServiceImplOrBiz", "TwoStep", "ThreeStep"
     ] = Field(..., description="코드 수정 타입")
     two_step_config: Optional[TwoStepConfig] = Field(
         None, description="2-Step LLM 협업 설정 (modification_type이 TwoStep일 때 필수)"
+    )
+    three_step_config: Optional[ThreeStepConfig] = Field(
+        None, description="3-Step LLM 협업 설정 (modification_type이 ThreeStep일 때 필수)"
     )
     llm_provider: Literal[
         "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"
