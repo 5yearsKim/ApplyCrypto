@@ -38,6 +38,27 @@ class TypeHandlerConfig(BaseModel):
     output_dir: str = Field(..., description="Type Handler 출력 디렉터리")
 
 
+class MultiStepExecutionConfig(BaseModel):
+    """TwoStep/ThreeStep 공통 실행 옵션
+
+    mode 값에 따른 동작:
+    - "full": Planning + Execution 전체 실행 (기본값)
+    - "plan_only": Planning까지만 실행하고 종료, 결과는 JSON으로 저장
+    - "execution_only": 이전 Planning 결과를 사용하여 Execution만 실행 (plan_timestamp 필수)
+    """
+
+    mode: Literal["full", "plan_only", "execution_only"] = Field(
+        "full",
+        description="실행 모드. 'full': 전체 실행, 'plan_only': Planning까지만, "
+        "'execution_only': Execution만 실행",
+    )
+    plan_timestamp: Optional[str] = Field(
+        None,
+        description="execution_only 모드에서 사용할 이전 Planning 결과의 timestamp. "
+        "예: '20250123_143052'. 해당 timestamp 폴더 내 모든 plan을 실행.",
+    )
+
+
 class TwoStepConfig(BaseModel):
     """2-Step LLM 협업 설정 (Planning + Execution)"""
 
@@ -52,6 +73,10 @@ class TwoStepConfig(BaseModel):
     ] = Field(..., description="Execution 단계에서 사용할 LLM 프로바이더")
     execution_model: Optional[str] = Field(
         None, description="Execution 단계에서 사용할 모델 ID (예: codestral-2508)"
+    )
+    execution_options: Optional[MultiStepExecutionConfig] = Field(
+        None,
+        description="실행 옵션 (mode, plan_timestamp)",
     )
 
 
@@ -76,6 +101,10 @@ class ThreeStepConfig(BaseModel):
     ] = Field(..., description="3단계 (Execution)에서 사용할 LLM 프로바이더")
     execution_model: Optional[str] = Field(
         None, description="3단계에서 사용할 모델 ID (예: codestral-2508)"
+    )
+    execution_options: Optional[MultiStepExecutionConfig] = Field(
+        None,
+        description="실행 옵션 (mode, plan_timestamp)",
     )
 
 

@@ -21,13 +21,73 @@ Follow the **modification instructions below exactly** to modify the code.
 
 ---
 
+## ⚠️ ABSOLUTE CODE PRESERVATION RULES (CRITICAL) ⚠️
+
+**YOU MUST PRESERVE THE ORIGINAL CODE EXACTLY AS IT IS.**
+
+### What you MUST keep unchanged:
+- ✅ ALL existing comments (including Korean comments, Javadoc, inline comments)
+- ✅ ALL existing blank lines and line spacing
+- ✅ ALL existing indentation (tabs, spaces)
+- ✅ ALL existing method signatures and implementations
+- ✅ ALL existing import statements
+- ✅ ALL existing class/field annotations
+- ✅ ALL existing variable names and values
+- ✅ ALL existing code formatting style
+
+### What you CAN do:
+- ✅ ADD new import statements (at the import section)
+- ✅ ADD new field declarations (e.g., `@Autowired private KsignUtil ksignUtil;`)
+- ✅ ADD encryption/decryption code at the **exact insertion_point** specified
+- ✅ WRAP existing values with encryption/decryption calls
+
+### What you MUST NOT do:
+- ❌ DO NOT remove or modify any existing comments
+- ❌ DO NOT change existing method names or signatures
+- ❌ DO NOT reformat or reorganize code
+- ❌ DO NOT change existing variable names
+- ❌ DO NOT remove blank lines between methods
+- ❌ DO NOT change indentation style
+- ❌ DO NOT add comments that weren't in the original
+- ❌ DO NOT translate or modify Korean comments
+
+### Example of CORRECT modification:
+
+**Original code:**
+```java
+public void saveEmployee(EmployeeVO vo) {
+    // 직원 정보 저장
+    employeeDao.insert(vo);
+}
+```
+
+**CORRECT output (preserves comment, adds only encryption):**
+```java
+public void saveEmployee(EmployeeVO vo) {
+    // 직원 정보 저장
+    vo.setEmpNm(ksignUtil.ksignEnc("P017", vo.getEmpNm()));
+    employeeDao.insert(vo);
+}
+```
+
+**WRONG output (modified comment - DO NOT DO THIS):**
+```java
+public void saveEmployee(EmployeeVO vo) {
+    // Encryption processing for employee data
+    vo.setEmpNm(ksignUtil.ksignEnc("P017", vo.getEmpNm()));
+    employeeDao.insert(vo);
+}
+```
+
+---
+
 ## Modification Instructions (Generated from Planning Phase)
 
 {{ modification_instructions }}
 
 ---
 
-## Original Source Files ({{ file_count }} files)
+## Original Source Files
 
 **IMPORTANT**: Each file is labeled with an index like `[FILE_1]`, `[FILE_2]`, etc.
 Use these **exact indices** in your output.
@@ -97,10 +157,6 @@ public class EmployeeService {
 
 ======END======
 ```
-
----
-
-## Current Layer: {{ layer_name }}
 
 ---
 

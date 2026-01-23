@@ -458,6 +458,22 @@ class BaseCodeGenerator(ABC):
                     continue
 
             # SQL 쿼리 정보 추출
+            strategy_specific = sql_query.get("strategy_specific", {})
+            strategy_str = ""
+            if strategy_specific:
+                parts = []
+                if "parameter_type" in strategy_specific:
+                    parts.append(
+                        f"Parameter Type: {strategy_specific['parameter_type']}"
+                    )
+                if "result_type" in strategy_specific:
+                    parts.append(f"Result Type: {strategy_specific['result_type']}")
+                if "result_map" in strategy_specific:
+                    parts.append(f"Result Map: {strategy_specific['result_map']}")
+                if "namespace" in strategy_specific:
+                    parts.append(f"Namespace: {strategy_specific['namespace']}")
+                strategy_str = ", ".join(parts)
+
             relevant_queries.append(
                 {
                     "id": sql_query.get("id"),
@@ -465,6 +481,8 @@ class BaseCodeGenerator(ABC):
                     "sql": sql_query.get("sql"),
                     "call_stacks": sql_query.get("call_stacks", []),
                     "source_file": sql_query.get("source_file_path"),
+                    "strategy_specific": strategy_specific,
+                    "strategy_description": strategy_str,
                 }
             )
 

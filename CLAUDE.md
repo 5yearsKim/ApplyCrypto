@@ -4,22 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ApplyCrypto is an AI-powered tool that automatically analyzes and modifies Java Spring Boot legacy systems to encrypt/decrypt sensitive personal information in database operations. It uses static code analysis, call graph traversal, and LLM-based code generation to insert encryption logic into identified files.
+ApplyCrypto는 Java Spring Boot 레거시 시스템에서 민감한 개인정보를 암호화/복호화하도록 소스 코드를 자동으로 분석하고 수정하는 AI 기반 도구입니다. 정적 코드 분석, 콜 그래프 순회, LLM 기반 코드 생성을 사용합니다.
 
 ## Common Commands
-
-### Setup and Installation
-```bash
-# Windows PowerShell setup
-./scripts/setup.ps1
-
-# Activate virtual environment
-source .venv/bin/activate  # Linux/Mac
-.\.venv\Scripts\activate   # Windows
-
-# Install dependencies
-pip install -r requirements.txt
-```
 
 ### Running the Tool
 ```bash
@@ -31,15 +18,10 @@ python main.py list --all          # All source files
 python main.py list --db           # Table access information
 python main.py list --endpoint     # REST API endpoints
 python main.py list --callgraph EmpController.login  # Method call chain
-python main.py list --modified     # Modified files history
 
 # Modify code (insert encryption/decryption logic)
 python main.py modify --config config.json --dry-run  # Preview only
 python main.py modify --config config.json            # Apply changes
-python main.py modify --config config.json --debug    # Show diff with line numbers
-
-# Clear backup files
-python main.py clear
 
 # Launch Streamlit UI
 python run_ui.py
@@ -47,25 +29,13 @@ python run_ui.py
 
 ### Development Commands
 ```bash
-# Run all tests
-pytest
+pytest                                      # Run all tests
+pytest tests/test_db_access_analyzer.py     # Run specific test
+pytest --cov=src --cov-report=html          # Tests with coverage
 
-# Run specific test file
-pytest tests/test_db_access_analyzer.py
-
-# Run tests with coverage
-pytest --cov=src --cov-report=html
-
-# Linting (Windows)
-./scripts/lint.ps1
-
-# Linting (manual)
-isort .
-ruff format
-ruff check --fix
-
-# Clear backup files (generated during modification)
-python main.py clear
+# Linting (run before commit)
+./scripts/lint.ps1                          # Windows
+isort . && ruff format && ruff check --fix  # Manual
 ```
 
 ### Environment Variables
@@ -79,120 +49,64 @@ WATSONX_PROJECT_ID=your_project_id
 ## Architecture Overview
 
 ### Layered Architecture Flow
-The system follows a strict layered architecture with clear separation of concerns:
+```
+CLI Layer → Configuration → Collection → Parsing → Analysis → Modification → Persistence
+```
 
-1. **CLI Layer** (`src/cli/`) → Entry point that orchestrates all other layers
-2. **Configuration Layer** (`src/config/`) → Loads and validates JSON config with Pydantic schemas
-3. **Collection Layer** (`src/collector/`) → Recursively collects source files with filtering
-4. **Parsing Layer** (`src/parser/`) → Parses Java AST and XML Mappers, builds call graphs
-5. **Analysis Layer** (`src/analyzer/`) → Identifies DB access patterns via call graph traversal
+1. **CLI Layer** (`src/cli/`) → Entry point, orchestrates workflow
+2. **Configuration Layer** (`src/config/`) → JSON config with Pydantic validation
+3. **Collection Layer** (`src/collector/`) → Recursive source file collection
+4. **Parsing Layer** (`src/parser/`) → Java AST (tree-sitter), XML Mappers, Call Graph (NetworkX)
+5. **Analysis Layer** (`src/analyzer/`) → DB access patterns via call graph traversal
 6. **Modification Layer** (`src/modifier/`) → LLM-based code generation and patching
-7. **LLM Layer** (`src/modifier/llm/`) → Abstract provider interface with multiple implementations
+7. **LLM Layer** (`src/modifier/llm/`) → Provider abstraction (WatsonX, OpenAI, Claude)
 8. **Persistence Layer** (`src/persistence/`) → JSON serialization and caching
 
 ### Key Design Patterns
 
-**Strategy Pattern** is used extensively:
-- `LLMProvider`: WatsonX, WatsonX On-Prem, OpenAI, Claude implementations
-- `EndpointExtractionStrategy`: Framework-specific endpoint extraction
-  - `SpringMVCEndpointExtraction`, `AnyframeSarangOnEndpointExtraction`
-  - `AnyframeCCSEndpointExtraction`, `AnyframeCCSBatchEndpointExtraction`
-  - `AnyframeBatEtcEndpointExtraction`
-- `SQLExtractor`: SQL wrapping type strategies
-  - `MyBatisSQLExtractor`, `MyBatisCCSSQLExtractor`, `MyBatisCCSBatchSQLExtractor`
-  - `JDBCSQLExtractor`, `JPASQLExtractor`
-  - `AnyframeJDBCSQLExtractor`, `AnyframeJDBCBatSQLExtractor`
-- `BaseCodeGenerator`: Modification type strategies
-  - `TypeHandlerCodeGenerator`, `ControllerServiceCodeGenerator`
-  - `ServiceImplBizCodeGenerator`, `TwoStepCodeGenerator`
-- `ContextGenerator`: Context generation strategies
-  - `MybatisContextGenerator`, `MybatisCCSContextGenerator`, `MybatisCCSBatchContextGenerator`
-  - `JdbcContextGenerator`, `PerLayerContextGenerator`
+**Strategy Pattern** - 새로운 프레임워크나 SQL 타입 추가 시 확장:
+- `LLMProvider`: LLM 프로바이더 추상화 (`src/modifier/llm/`)
+- `EndpointExtractionStrategy`: 프레임워크별 엔드포인트 추출 (`src/parser/endpoint_strategy/`)
+- `SQLExtractor`: SQL 래핑 타입별 추출 전략 (`src/analyzer/sql_extractors/`)
+- `BaseCodeGenerator`: 코드 생성 전략 (`src/modifier/code_generator/`)
+- `ContextGenerator`: 컨텍스트 생성 전략 (`src/modifier/context_generators/`)
 
-**Factory Pattern**:
-- `LLMFactory`: Creates appropriate LLM provider based on config
-- `EndpointExtractionStrategyFactory`: Creates framework-specific endpoint extractors
-- `SQLExtractorFactory`: Creates SQL extractor based on wrapping type
-- `CodeGeneratorFactory`: Creates code generator based on modification type
-- `ContextGeneratorFactory`: Creates context generator based on SQL wrapping type
+**Factory Pattern** - 설정 기반 전략 생성:
+- `LLMFactory`, `EndpointExtractionStrategyFactory`, `SQLExtractorFactory`
+- `CodeGeneratorFactory`, `ContextGeneratorFactory`
 
 ### Configuration Schema
 
-The `config.json` file drives the entire workflow. Critical fields:
+The `config.json` file drives the entire workflow. Key fields:
 
-- `framework_type`: Framework detection strategy
-  - `SpringMVC`, `AnyframeSarangOn`, `AnyframeOld`, `AnyframeEtc`
-  - `AnyframeCCS`, `anyframe_ccs_batch`: CCS framework variants
-  - `SpringBatQrts`, `AnyframeBatSarangOn`, `AnyframeBatEtc`: Batch variants
-- `sql_wrapping_type`: How SQL is accessed
-  - `mybatis`: Standard MyBatis XML mappers
-  - `mybatis_ccs`: CCS-specific MyBatis (ctl/svcimpl/dqm layers)
-  - `mybatis_ccs_batch`: CCS Batch MyBatis (*BAT_SQL.xml files)
-  - `jdbc`, `jpa`: Other SQL wrapping methods
-- `modification_type`: Where to insert encryption logic
-  - `TypeHandler`: MyBatis TypeHandler approach
-  - `ControllerOrService`: Controller/Service layer modification
-  - `ServiceImplOrBiz`: ServiceImpl/Biz layer modification
-  - `TwoStep`: Two-phase LLM collaboration (Planning + Execution)
-- `two_step_config`: Required when `modification_type` is `TwoStep`
-  - `planning_provider`, `planning_model`: LLM for data flow analysis
-  - `execution_provider`, `execution_model`: LLM for code generation
-- `llm_provider`: AI model to use (`watsonx_ai`, `watsonx_ai_on_prem`, `claude_ai`, `openai`, `mock`)
-- `access_tables`: Tables/columns requiring encryption
-- `generate_full_source`: Whether to include full source in prompts (uses `template_full.md` instead of `template.md`)
-- `use_call_chain_mode`: Enable call chain traversal mode
-- `use_llm_parser`: Use LLM for SQL extraction when static analysis fails
-- `max_tokens_per_batch`: Maximum tokens per batch (default: 8000)
+| Field | Description |
+|-------|-------------|
+| `framework_type` | `SpringMVC`, `AnyframeSarangOn`, `AnyframeCCS`, `anyframe_ccs_batch` 등 |
+| `sql_wrapping_type` | `mybatis`, `mybatis_ccs`, `mybatis_ccs_batch`, `jdbc`, `jpa` |
+| `modification_type` | `ControllerOrService`, `ServiceImplOrBiz`, `TypeHandler`, `TwoStep`, `ThreeStep` |
+| `llm_provider` | `watsonx_ai`, `watsonx_ai_on_prem`, `claude_ai`, `openai`, `mock` |
+| `access_tables` | 암호화 대상 테이블/칼럼 목록 |
 
-See `config.example.json` for complete schema.
+See `config.example.json` for complete schema with all options.
 
 ### Call Graph Traversal
 
-The call graph (`src/parser/call_graph_builder.py`) uses NetworkX to build a directed graph of method calls:
-- Nodes: Methods (identified by `class_name.method_name`)
-- Edges: Call relationships with argument tracking
-- Entry points: REST endpoints extracted via framework-specific strategies
-- Traversal: Reverse BFS from DB access points to find all callers
+Call Graph (`src/parser/call_graph_builder.py`)는 NetworkX를 사용하여 메서드 호출 관계를 추적합니다:
+- 노드: `class_name.method_name` 형태의 메서드
+- 엣지: 인수 추적이 포함된 호출 관계
+- 순회: DB 접근 지점에서 역방향 BFS로 모든 호출자 식별
+- 결과: `Controller → Service → DAO → Mapper` 경로 추적
 
-This enables tracing: `Controller → Service → DAO → Mapper` to identify which files need encryption logic.
+### Multi-Step Code Generation
 
-### LLM-Based Code Modification
+복잡한 코드 수정의 정확성을 높이기 위해 **다단계 LLM 협업 전략**을 지원합니다:
 
-The modification workflow (`src/modifier/code_modifier.py`):
+#### TwoStep (2단계)
+```
+Phase 1: Planning (데이터 흐름 분석) → Phase 2: Execution (코드 생성)
+```
 
-1. **Context Generation**: `ContextGenerator` creates `ModificationContext` objects with:
-   - Source file content (full or partial based on `generate_full_source`)
-   - Table/column metadata
-   - Framework-specific hints
-
-2. **Prompt Template Rendering**: Jinja2 templates (`template.md` or `template_full.md`) in each code generator directory are rendered with context variables
-
-3. **LLM Code Generation**: `BaseCodeGenerator` subclasses call LLM provider and parse response
-
-4. **Code Patching**: `CodePatcher` applies unified diff format patches to source files
-
-5. **Error Handling**: `ErrorHandler` provides automatic retry with exponential backoff
-
-6. **Result Tracking**: `ResultTracker` records all modifications with metadata
-
-### Two-Step Code Generation (TwoStep)
-
-The `TwoStepCodeGenerator` implements a two-phase LLM collaboration strategy for improved code generation quality:
-
-**Phase 1: Planning (Data Flow Analysis)**
-- Uses a model optimized for logical reasoning (e.g., GPT-OSS-120B, Claude Sonnet)
-- Analyzes data flow through the call chain
-- Identifies where encryption/decryption should be inserted
-- Generates detailed modification instructions as structured JSON
-- Template: `planning_template.md`
-
-**Phase 2: Execution (Code Generation)**
-- Uses a model optimized for code generation (e.g., Codestral-2508, GPT-4)
-- Receives planning instructions from Phase 1
-- Generates actual code patches following the plan
-- Template: `execution_template.md`
-
-**Configuration Example:**
+**설정 예시:**
 ```json
 {
   "modification_type": "TwoStep",
@@ -205,148 +119,84 @@ The `TwoStepCodeGenerator` implements a two-phase LLM collaboration strategy for
 }
 ```
 
-**Key Benefits:**
-- Separation of concerns: logical analysis vs code generation
-- Better data flow understanding before code modification
-- Reduced hallucination in code generation
-- Model specialization: use best model for each task
+#### ThreeStep (3단계)
+```
+Phase 1: Query Analysis (VO/SQL 매핑) → Phase 2: Planning (수정 지침) → Phase 3: Execution (코드 생성)
+```
 
-### Parsing Infrastructure
+Phase 1에서 VO 파일과 SQL 쿼리의 필드 매핑을 먼저 분석하여 Planning의 정확성을 높입니다.
 
-**Java AST Parsing** (`src/parser/java_ast_parser.py`):
-- Uses `tree-sitter` with `tree-sitter-java` grammar
-- Extracts: classes, methods, annotations, method calls
-- Captures method signatures with parameters and return types
+**설정 예시:**
+```json
+{
+  "modification_type": "ThreeStep",
+  "three_step_config": {
+    "analysis_provider": "watsonx_ai",
+    "analysis_model": "ibm/granite-3-8b-instruct",
+    "execution_provider": "watsonx_ai",
+    "execution_model": "mistralai/codestral-2505"
+  }
+}
+```
 
-**MyBatis XML Parsing** (`src/parser/xml_mapper_parser.py`):
-- Uses `lxml` to parse SQL mapper XMLs
-- Extracts SQL queries from `<select>`, `<insert>`, `<update>`, `<delete>` tags
-- Identifies table/column references from SQL text
-
-**Call Graph Building** (`src/parser/call_graph_builder.py`):
-- Combines parsed Java and XML data
-- Builds directed graph with method calls as edges
-- Stores method metadata (class, package, file path, line numbers)
-- Supports argument tracking for method invocations
-
-### SQL Extraction Strategies
-
-Different projects wrap SQL in different ways. `SQLExtractor` implementations handle:
-
-- **MyBatis**: Extract from XML mapper files, match to Java DAO methods
-- **MyBatis CCS**: CCS-specific MyBatis with ctl/svcimpl/dqm layer structure
-- **MyBatis CCS Batch**: CCS Batch programs with `*BAT_SQL.xml` files
-  - XML structure: `<sql>/<query id="...">SQL</query></sql>`
-  - File mapping: `xxxBAT_SQL.xml → xxxBAT.java`
-  - Collects related VO files from `batvo/` directory
-- **JDBC**: Find `PreparedStatement` and SQL strings in Java code
-- **JPA**: Parse entity annotations and JPQL queries
-- **Anyframe JDBC**: Handle StringBuilder-based dynamic SQL construction
-- **Anyframe JDBC Batch**: Batch-specific JDBC SQL extraction
-- **LLM Fallback**: When static analysis fails, use LLM to extract SQL from code
+#### Execution Modes
+두 전략 모두 `execution_options.mode`로 실행 모드를 제어합니다:
+- `full`: 전체 파이프라인 실행 (기본값)
+- `plan_only`: Planning 단계만 실행, 결과를 `.applycrypto/{two,three}_step_results/`에 저장
+- `execution_only`: 이전 Planning 결과를 사용하여 Execution만 실행 (`plan_timestamp` 필요)
 
 ### Data Persistence
 
-All intermediate results are persisted as JSON:
-- Source files metadata: `{project_root}/build/applycrypto_source_files.json`
-- Call graph: `{project_root}/build/applycrypto_call_graph.json`
-- Table access info: `{project_root}/build/applycrypto_table_access.json`
-- Modification records: `{project_root}/build/applycrypto_modification_records.json`
+분석 결과는 JSON으로 영속화됩니다:
+- `{project_root}/build/applycrypto_source_files.json`
+- `{project_root}/build/applycrypto_call_graph.json`
+- `{project_root}/build/applycrypto_table_access.json`
+- `{project_root}/build/applycrypto_modification_records.json`
 
-Custom JSON encoder/decoder (`src/persistence/`) handle dataclass serialization.
-
-Caching (`src/persistence/cache_manager.py`) stores parsed results to speed up subsequent runs.
+`CacheManager`는 파싱 결과를 캐싱하여 후속 실행 속도를 높입니다.
 
 ## Important Conventions
 
-### Module Organization
-- Each layer is a top-level package under `src/`
-- Strategy implementations go in subdirectories (e.g., `sql_extractors/`, `endpoint_strategy/`, `code_generator/`)
-- Factory classes create strategies based on config enums
-- Base classes are abstract with clear interfaces
-
 ### Naming Patterns
-- Analyzers: `*Analyzer` (e.g., `DBAccessAnalyzer`)
-- Parsers: `*Parser` (e.g., `JavaASTParser`, `XMLMapperParser`)
-- Builders: `*Builder` (e.g., `CallGraphBuilder`)
-- Generators: `*Generator` (e.g., `TypeHandlerCodeGenerator`)
-- Extractors: `*Extractor` (e.g., `MyBatisSQLExtractor`)
-- Providers: `*Provider` (e.g., `WatsonXAIProvider`)
-- Strategies: `*Strategy` (e.g., `EndpointExtractionStrategy`)
+| Type | Pattern | Example |
+|------|---------|---------|
+| Analyzers | `*Analyzer` | `DBAccessAnalyzer` |
+| Parsers | `*Parser` | `JavaASTParser` |
+| Generators | `*Generator` | `TwoStepCodeGenerator` |
+| Extractors | `*Extractor` | `MyBatisSQLExtractor` |
+| Providers | `*Provider` | `WatsonXAIProvider` |
 
-### Error Handling
-- Custom exception classes: `ConfigurationError`, `CodeGeneratorError`, `PersistenceError`
-- Logger naming: Use module path (e.g., `logging.getLogger(__name__)`)
-- Validation: Pydantic schemas for all config and data models
+### Adding New Strategies
+새로운 프레임워크나 SQL 타입을 추가할 때:
+1. 해당 Strategy 베이스 클래스 상속 (예: `SQLExtractor`, `EndpointExtractionStrategy`)
+2. 해당 하위 디렉토리에 구현체 추가
+3. Factory 클래스에 enum/생성 로직 추가
+4. `config.example.json`에 새 옵션 문서화
 
 ### Template System
-- Each code generator type has its own directory with templates
-- `template.md`: Partial source context (default)
-- `template_full.md`: Full source context (when `generate_full_source: true`)
-- TwoStep generator uses separate templates:
-  - `planning_template.md`: For data flow analysis phase
-  - `execution_template.md`: For code generation phase
-- Templates use Jinja2 syntax with variables like:
-  - `{{source_code}}`: Source file content
-  - `{{table_info}}`: Table and column metadata
-  - `{{call_chain}}`: Method call chain from endpoint to DB access
-  - `{{vo_files}}`: Related Value Object files (for CCS Batch)
-  - `{{planning_result}}`: Planning phase output (for TwoStep execution)
+각 코드 생성기는 Jinja2 템플릿을 사용합니다:
+```
+src/modifier/code_generator/
+├── two_step_type/
+│   ├── planning_template.md
+│   └── execution_template.md
+└── three_step_type/
+    ├── data_mapping_template.md   # Phase 1: VO/SQL 매핑
+    ├── planning_template.md       # Phase 2: 수정 지침
+    └── execution_template.md      # Phase 3: 코드 생성
+```
 
-## Testing Guidelines
+주요 템플릿 변수: `{{source_code}}`, `{{table_info}}`, `{{call_chain}}`, `{{mapping_info}}`
 
-- Test files mirror source structure: `test_{module_name}.py`
-- Integration tests: `test_integration_*.py`
-- Use pytest fixtures for common setup
-- Mock LLM providers with `MockLLMProvider` for testing modification logic
-- Test data in `tests/` directory or inline as strings
-
-## Recent Feature Additions
-
-The following features have been added in recent commits (as of January 2026):
-
-### CCS Batch Support (`bc57d0a`, `b4998d0`)
-- Added `MyBatisCCSBatchSQLExtractor` for `*BAT_SQL.xml` files
-- Added `MybatisCCSBatchContextGenerator` for batch-specific context generation
-- Added `AnyframeCCSBatchEndpointExtraction` strategy
-- New SQL wrapping type: `mybatis_ccs_batch`
-- Collects related VO files from `batvo/` directory
-
-### MyBatis CCS Context Generation (`4e7ebe4`)
-- Added `MybatisCCSContextGenerator` for CCS layer structure (ctl/svcimpl/dqm)
-- Added `MyBatisCCSSQLExtractor` for CCS-specific SQL extraction
-- New SQL wrapping type: `mybatis_ccs`
-
-### Hybrid Parsing Strategy (`b4998d0`)
-- Added hybrid parsing for file names generated from Execution phase
-- Improved file path resolution in TwoStep code generation
-
-### Two-Step Code Generation (`6a3f28b`)
-- Added `TwoStepCodeGenerator` with Planning + Execution phases
-- Separate LLM providers/models for each phase
-- New modification type: `TwoStep`
-- Templates: `planning_template.md`, `execution_template.md`
-
-### Call Graph Enhancements (`21a4ca0`, `a63990d`)
-- Added line number tracking in call graph
-- Enhanced argument tracking for method invocations
-- Improved call chain visualization with `--debug` option
-
-### VO File Handling (`4ad704f`, `354a47d`)
-- VO files now passed to LLM in separate prompt section
-- Logging of VO files included in prompts
-- Fixed to include all VO files from service layer
-
-### Clear Command (`9905a27`)
-- Added `python main.py clear` command to remove backup files
-- Added `--debug` option for diff with line numbers
+### Error Handling
+- 커스텀 예외: `ConfigurationError`, `CodeGeneratorError`, `PersistenceError`
+- 로거: `logging.getLogger("applycrypto")`
+- 검증: 모든 설정과 데이터 모델에 Pydantic 스키마 사용
 
 ## Korean Language Support
 
-This project uses Korean (한글) for:
-- README and documentation
-- CLI help messages and logging
-- Comments in Korean for domain-specific context
-- Variable names and docstrings in English for code clarity
+이 프로젝트는 한국어를 사용합니다:
+- README, 문서화, CLI 메시지
+- 도메인 관련 코드 주석
 
-When modifying Korean text, ensure UTF-8 encoding is preserved.
+코드 명확성을 위해 변수명과 docstring은 영어로 유지합니다.

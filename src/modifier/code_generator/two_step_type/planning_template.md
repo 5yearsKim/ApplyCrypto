@@ -43,7 +43,7 @@ The following are actual SQL queries accessing this table. **Query type (SELECT/
 Call path from controller to SQL:
 {{ call_stacks }}
 
-### Source Files to Modify ({{ file_count }} files)
+### Source Files to Modify
 {{ source_files }}
 
 {% if context_files %}
@@ -51,8 +51,6 @@ Call path from controller to SQL:
 Reference files for understanding data structures:
 {{ context_files }}
 {% endif %}
-
-### Current Layer: {{ layer_name }}
 
 ---
 
@@ -63,9 +61,46 @@ Analyze SQL queries and call chains to understand how data flows:
 - **INSERT/UPDATE queries** → Encryption needed **before** saving to DB
 - **SELECT queries** → Decryption needed **after** retrieving from DB
 
-### 2. Modification Location Decision
-- Service layer **before/after** DAO/Mapper calls is the typical modification location
-- If Controller directly calls DAO, modify in Controller
+### 2. Modification Location Decision (★ CRITICAL: Service Layer Priority)
+
+**IMPORTANT: Always prioritize Service layer for encryption/decryption logic.**
+
+**Why Service Layer First?**
+1. **Consistency**: The same file may appear in multiple modification contexts (different tables). Consistent placement in Service layer prevents duplicate encryption/decryption.
+2. **Separation of Concerns**: Controller handles HTTP request/response only. Service handles business logic including encryption/decryption.
+3. **Maintainability**: All crypto logic in one layer makes it easier to audit and maintain.
+
+**Decision Rules:**
+| Call Chain Pattern | Modification Location | Reason |
+|-------------------|----------------------|--------|
+| Controller → Service → DAO | **Service** (preferred) | Standard pattern, crypto in Service |
+| Controller → DAO (no Service) | Controller | No Service layer exists |
+| Service → DAO (no Controller) | Service | Batch/scheduled job pattern |
+
+**⚠️ WARNING: Never add crypto logic to BOTH Controller AND Service for the same data flow!**
+This causes double encryption/decryption which corrupts data.
+
+```java
+// ❌ WRONG: Crypto in both layers
+// Controller
+vo.setName(ksignUtil.ksignEnc("P017", vo.getName()));  // First encryption
+employeeService.save(vo);
+
+// Service
+vo.setName(ksignUtil.ksignEnc("P017", vo.getName()));  // Double encryption! DATA CORRUPTED!
+employeeDao.insert(vo);
+
+// ✅ CORRECT: Crypto only in Service layer
+// Controller - NO crypto logic
+employeeService.save(vo);
+
+// Service - crypto logic HERE
+vo.setName(ksignUtil.ksignEnc("P017", vo.getName()));
+employeeDao.insert(vo);
+```
+
+**When to SKIP Controller files:**
+- If the call chain includes a Service layer, mark Controller modifications as `action: "SKIP"` with reason: "Encryption/decryption handled in Service layer"
 
 ### 3. Minimize Modification Scope
 - Maintain existing code structure and logic as much as possible
@@ -74,8 +109,18 @@ Analyze SQL queries and call chains to understand how data flows:
 
 ---
 
-## Output Format (Must output in JSON format)
+## Output Format (★★★ CRITICAL: JSON ONLY ★★★)
 
+**IMPORTANT OUTPUT RULES:**
+1. Output **ONLY** valid JSON - no explanations, no markdown, no comments before or after
+2. Do **NOT** include ```json or ``` markers
+3. Do **NOT** add trailing commas (e.g., `{"a": 1,}` is INVALID)
+4. Do **NOT** include JavaScript-style comments (`//` or `/* */`)
+5. Use **double quotes** for all strings and keys
+6. Ensure all brackets and braces are properly closed
+7. Use `null` instead of `undefined` or empty values
+
+**Expected JSON Structure:**
 ```json
 {
   "data_flow_analysis": {
@@ -84,7 +129,7 @@ Analyze SQL queries and call chains to understand how data flows:
       {
         "flow_id": "FLOW_001",
         "flow_name": "User Registration Flow",
-        "direction": "INBOUND_TO_DB",
+        "direction": "INBOUND_TO_DB | DB_TO_OUTBOUND | BIDIRECTIONAL",
         "data_source": {
           "type": "HTTP_REQUEST | SESSION | DB | EXTERNAL_API",
           "description": "Where the data comes from"
@@ -94,34 +139,56 @@ Analyze SQL queries and call chains to understand how data flows:
           "description": "Where the data goes to"
         },
         "path": "Controller.method() → Service.method() → DAO.method() → DB",
-        "sensitive_columns": ["last_name", "jumin_number"],
-        "crypto_action": "ENCRYPT",
-        "crypto_timing": "Before DB save (in Service layer)"
+        "sensitive_columns": ["last_name", "jumin_number"]
       }
-    ],
-    "layer_responsibilities": {
-      "controller": "Handles HTTP request/response, only passes data",
-      "service": "Business logic, handles encryption/decryption",
-      "dao": "Only handles DB access, passes encrypted data as-is"
-    }
+    ]
   },
   "modification_instructions": [
     {
+      "flow_id": "FLOW_001 (matches data_flow_analysis.flows[].flow_id)",
       "file_name": "File name (e.g., UserService.java)",
       "target_method": "Method name to modify",
-      "action": "ENCRYPT | DECRYPT | SKIP",
+      "action": "ENCRYPT | DECRYPT | ENCRYPT_THEN_DECRYPT | SKIP",
       "reason": "Reason for this modification (or reason for SKIP)",
-      "target_columns": [
-        {
-          "column_name": "Column name in code/VO (e.g., empNm, birthDt)",
-          "policy_id": "Policy ID for this field type (P017, P018, or P019)"
-        }
-      ],
+      "target_properties": ["empNm", "birthDt", "juminNo"],
       "insertion_point": "Code insertion location description (e.g., 'right before dao.insert(list) call')",
-      "data_object_name": "Target object name for encryption/decryption (e.g., list, userVO, reqData)",
       "code_pattern_hint": "Code pattern hint to insert"
     }
   ]
+}
+```
+
+### BIDIRECTIONAL Flow Structure
+
+For `direction: "BIDIRECTIONAL"` (e.g., search with encrypted WHERE + decrypted result), use nested objects for each direction:
+
+```json
+{
+  "flow_id": "FLOW_001",
+  "flow_name": "Customer Search with Encrypted WHERE",
+  "direction": "BIDIRECTIONAL",
+  "INBOUND_TO_DB": {
+    "data_source": {
+      "type": "HTTP_REQUEST",
+      "description": "Search parameter (name) from user input"
+    },
+    "data_sink": {
+      "type": "DB",
+      "description": "Query executes against encrypted DB data"
+    }
+  },
+  "DB_TO_OUTBOUND": {
+    "data_source": {
+      "type": "DB",
+      "description": "Encrypted results from database"
+    },
+    "data_sink": {
+      "type": "HTTP_RESPONSE",
+      "description": "Decrypted results returned to client"
+    }
+  },
+  "path": "Controller → Service.search() → DAO → DB → Service → Controller → Client",
+  "sensitive_columns": ["cust_nm", "birth_dt"]
 }
 ```
 
@@ -129,18 +196,29 @@ Analyze SQL queries and call chains to understand how data flows:
 
 | Field | Description | Example |
 |-------|-------------|---------|
+| `flow_id` | Reference to data_flow_analysis.flows[].flow_id | `FLOW_001`, `FLOW_002` |
 | `file_name` | File name to modify | `UserService.java`, `EmpController.java` |
 | `target_method` | Method name to modify | `saveUser`, `getUserList` |
-| `action` | Action to perform | `ENCRYPT`, `DECRYPT`, `SKIP` |
-| `target_columns` | Columns to encrypt/decrypt (ONLY name, DOB, jumin) | `[{"column_name": "empNm", "policy_id": "P017"}]` |
+| `action` | Action to perform | `ENCRYPT`, `DECRYPT`, `ENCRYPT_THEN_DECRYPT`, `SKIP` |
+| `target_properties` | Properties to encrypt/decrypt (array of strings) | `["empNm", "birthDt", "juminNo"]` |
 | `insertion_point` | Insertion location description | `right before dao.insert() call`, `right before return list;` |
-| `data_object_name` | Target data object | `list`, `userVO`, `result` |
 | `code_pattern_hint` | Code pattern example | `vo.setEmpNm(ksignUtil.ksignEnc("P017", vo.getEmpNm()));` |
+
+### ⚠️ CRITICAL: Every Flow MUST Have a modification_instruction Entry ⚠️
+
+**For EVERY flow in `data_flow_analysis.flows`, you MUST output a corresponding entry in `modification_instructions`.**
+
+- If the flow requires encryption/decryption → output with `action: "ENCRYPT"` or `action: "DECRYPT"`
+- If the flow does NOT require modification → output with `action: "SKIP"` and explain `reason`
+
+**DO NOT skip any flow!** The Execution phase relies on explicit SKIP entries to know which flows were analyzed and intentionally skipped.
+
+**Example:** If `data_flow_analysis.flows` contains FLOW_001, FLOW_002, FLOW_003, then `modification_instructions` MUST contain entries for ALL three flows (even if some are SKIP).
 
 ### Important Notes
 
-1. **When action is SKIP**: Specify in `reason` why the file/method does not need modification
-2. **target_columns**: ONLY include name (P017), DOB (P018), or jumin (P019) fields. Do NOT include other fields.
+1. **When action is SKIP**: Specify in `reason` which flow (flow_id) this refers to and why no modification is needed
+2. **target_properties**: Array of property names (strings). ONLY include name, DOB, or jumin fields. Do NOT include other fields.
 3. **insertion_point**: Describe specifically so code can be inserted in the next step
 4. **code_pattern_hint**: Use `ksignUtil.ksignEnc(policyId, value)` for encryption, `ksignUtil.ksignDec(policyId, value)` for decryption
 
@@ -234,9 +312,7 @@ Example: SELECT empNm, birthDt FROM employee WHERE empNm = #{searchName}
           "description": "INSERT into employee table"
         },
         "path": "EmpController.save() → EmployeeService.saveEmployee() → EmployeeDao.insert() → DB",
-        "sensitive_columns": ["emp_nm", "birth_dt", "jumin_no"],
-        "crypto_action": "ENCRYPT",
-        "crypto_timing": "In Service layer, right before DAO call"
+        "sensitive_columns": ["emp_nm", "birth_dt", "jumin_no"]
       },
       {
         "flow_id": "FLOW_002",
@@ -251,54 +327,39 @@ Example: SELECT empNm, birthDt FROM employee WHERE empNm = #{searchName}
           "description": "Return as JSON response to client"
         },
         "path": "DB → EmployeeDao.selectById() → EmployeeService.getEmployeeById() → EmpController.getEmployee() → Client",
-        "sensitive_columns": ["emp_nm", "birth_dt", "jumin_no"],
-        "crypto_action": "DECRYPT",
-        "crypto_timing": "In Service layer, right after DAO return"
+        "sensitive_columns": ["emp_nm", "birth_dt", "jumin_no"]
       }
-    ],
-    "layer_responsibilities": {
-      "controller": "Only handles HTTP request/response, no encryption logic",
-      "service": "Handles business logic, key location for encryption/decryption",
-      "dao": "Only handles DB access, receives and stores encrypted data as-is"
-    }
+    ]
   },
   "modification_instructions": [
     {
+      "flow_id": "FLOW_001",
       "file_name": "EmployeeService.java",
       "target_method": "saveEmployee",
       "action": "ENCRYPT",
       "reason": "FLOW_001: Encryption needed before saving HTTP request data to DB",
-      "target_columns": [
-        {"column_name": "empNm", "policy_id": "P017"},
-        {"column_name": "birthDt", "policy_id": "P018"},
-        {"column_name": "juminNo", "policy_id": "P019"}
-      ],
+      "target_properties": ["empNm", "birthDt", "juminNo"],
       "insertion_point": "Right before employeeDao.insert(vo) call",
-      "data_object_name": "vo",
       "code_pattern_hint": "vo.setEmpNm(ksignUtil.ksignEnc(\"P017\", vo.getEmpNm()));\nvo.setBirthDt(ksignUtil.ksignEnc(\"P018\", vo.getBirthDt()));\nvo.setJuminNo(ksignUtil.ksignEnc(\"P019\", vo.getJuminNo()));"
     },
     {
+      "flow_id": "FLOW_002",
       "file_name": "EmployeeService.java",
       "target_method": "getEmployeeById",
       "action": "DECRYPT",
       "reason": "FLOW_002: Decryption needed before returning encrypted data from DB to client",
-      "target_columns": [
-        {"column_name": "empNm", "policy_id": "P017"},
-        {"column_name": "birthDt", "policy_id": "P018"},
-        {"column_name": "juminNo", "policy_id": "P019"}
-      ],
+      "target_properties": ["empNm", "birthDt", "juminNo"],
       "insertion_point": "Right after employeeDao.selectById(id) return, before return statement",
-      "data_object_name": "employee",
       "code_pattern_hint": "employee.setEmpNm(ksignUtil.ksignDec(\"P017\", employee.getEmpNm()));\nemployee.setBirthDt(ksignUtil.ksignDec(\"P018\", employee.getBirthDt()));\nemployee.setJuminNo(ksignUtil.ksignDec(\"P019\", employee.getJuminNo()));"
     },
     {
+      "flow_id": "FLOW_001",
       "file_name": "EmpController.java",
       "target_method": "any",
       "action": "SKIP",
       "reason": "Controller only handles data passing, encryption/decryption is handled in Service layer",
-      "target_columns": [],
+      "target_properties": [],
       "insertion_point": "",
-      "data_object_name": "",
       "code_pattern_hint": ""
     }
   ]
@@ -323,38 +384,28 @@ Example: SELECT empNm, birthDt FROM employee WHERE empNm = #{searchName}
         "flow_id": "FLOW_001",
         "flow_name": "Customer Search with Encrypted WHERE",
         "direction": "BIDIRECTIONAL",
-        "data_source": {
-          "type": "HTTP_REQUEST",
-          "description": "Search parameter (name) from user input"
+        "INBOUND_TO_DB": {
+          "data_source": {"type": "HTTP_REQUEST", "description": "Search parameter (name) from user input"},
+          "data_sink": {"type": "DB", "description": "Query executes against encrypted DB data"}
         },
-        "data_sink": {
-          "type": "HTTP_RESPONSE",
-          "description": "Search results returned to client"
+        "DB_TO_OUTBOUND": {
+          "data_source": {"type": "DB", "description": "Encrypted results from database"},
+          "data_sink": {"type": "HTTP_RESPONSE", "description": "Decrypted results returned to client"}
         },
-        "path": "SearchController.search() → CustomerService.searchByName() → CustomerDao.selectByName() → DB → (result) → CustomerService → SearchController → Client",
-        "sensitive_columns": ["cust_nm", "birth_dt"],
-        "crypto_action": "ENCRYPT_THEN_DECRYPT",
-        "crypto_timing": "ENCRYPT search param before DAO call, DECRYPT results after DAO return"
+        "path": "SearchController.search() → CustomerService.searchByName() → CustomerDao.selectByName() → DB → CustomerService → SearchController → Client",
+        "sensitive_columns": ["cust_nm", "birth_dt"]
       }
-    ],
-    "layer_responsibilities": {
-      "controller": "Receives search request, returns results",
-      "service": "1) Encrypts search parameters, 2) Calls DAO, 3) Decrypts results",
-      "dao": "Executes query with encrypted parameters"
-    }
+    ]
   },
   "modification_instructions": [
     {
+      "flow_id": "FLOW_001",
       "file_name": "CustomerService.java",
       "target_method": "searchByName",
       "action": "ENCRYPT_THEN_DECRYPT",
       "reason": "FLOW_001: Search param must be encrypted to match DB data, results must be decrypted for response",
-      "target_columns": [
-        {"column_name": "custNm", "policy_id": "P017"},
-        {"column_name": "birthDt", "policy_id": "P018"}
-      ],
+      "target_properties": ["custNm", "birthDt"],
       "insertion_point": "ENCRYPT: Right before customerDao.selectByName() call; DECRYPT: Right after DAO return",
-      "data_object_name": "searchParam (for encrypt), resultList (for decrypt)",
       "code_pattern_hint": "// Before DAO call: encrypt search parameter\nsearchParam.setCustNm(ksignUtil.ksignEnc(\"P017\", searchParam.getCustNm()));\nList<Customer> resultList = customerDao.selectByName(searchParam);\n// After DAO call: decrypt results\nfor (Customer c : resultList) {\n    c.setCustNm(ksignUtil.ksignDec(\"P017\", c.getCustNm()));\n    c.setBirthDt(ksignUtil.ksignDec(\"P018\", c.getBirthDt()));\n}"
     }
   ]
@@ -389,28 +440,19 @@ Example: SELECT empNm, birthDt FROM employee WHERE empNm = #{searchName}
           "description": "INSERT into audit_log table"
         },
         "path": "Session → AuditService.logAction() → AuditDao.insertLog() → DB",
-        "sensitive_columns": ["user_nm"],
-        "crypto_action": "ENCRYPT",
-        "crypto_timing": "In Service layer, right before DAO call. DO NOT decrypt session data."
+        "sensitive_columns": ["user_nm"]
       }
-    ],
-    "layer_responsibilities": {
-      "controller": "Not involved in this flow",
-      "service": "Gets plaintext from session, encrypts before DB save",
-      "dao": "Stores encrypted data"
-    }
+    ]
   },
   "modification_instructions": [
     {
+      "flow_id": "FLOW_001",
       "file_name": "AuditService.java",
       "target_method": "logAction",
       "action": "ENCRYPT",
       "reason": "FLOW_001: Session data is plaintext, must encrypt before DB storage. No decryption needed for session data.",
-      "target_columns": [
-        {"column_name": "userNm", "policy_id": "P017"}
-      ],
+      "target_properties": ["userNm"],
       "insertion_point": "Right before auditDao.insertLog() call",
-      "data_object_name": "logData",
       "code_pattern_hint": "logData.setUserNm(ksignUtil.ksignEnc(\"P017\", logData.getUserNm()));"
     }
   ]
@@ -445,31 +487,19 @@ Example: SELECT empNm, birthDt FROM employee WHERE empNm = #{searchName}
           "description": "Partner system API expects plaintext"
         },
         "path": "DB → MemberDao.selectById() → MemberService.getMemberForExport() → ExternalApiClient.sendMemberInfo() → Partner System",
-        "sensitive_columns": ["mem_nm", "birth_dt", "jumin_no"],
-        "crypto_action": "DECRYPT",
-        "crypto_timing": "In Service layer, after DAO return, before sending to external API"
+        "sensitive_columns": ["mem_nm", "birth_dt", "jumin_no"]
       }
-    ],
-    "layer_responsibilities": {
-      "controller": "Initiates export request",
-      "service": "Retrieves encrypted data from DB, decrypts for external system",
-      "dao": "Returns encrypted data from DB",
-      "external_client": "Sends plaintext to partner"
-    }
+    ]
   },
   "modification_instructions": [
     {
+      "flow_id": "FLOW_001",
       "file_name": "MemberService.java",
       "target_method": "getMemberForExport",
       "action": "DECRYPT",
       "reason": "FLOW_001: External API expects plaintext. Must decrypt DB data before sending to partner system.",
-      "target_columns": [
-        {"column_name": "memNm", "policy_id": "P017"},
-        {"column_name": "birthDt", "policy_id": "P018"},
-        {"column_name": "juminNo", "policy_id": "P019"}
-      ],
+      "target_properties": ["memNm", "birthDt", "juminNo"],
       "insertion_point": "Right after memberDao.selectById() return, before externalApiClient.sendMemberInfo() call",
-      "data_object_name": "memberData",
       "code_pattern_hint": "memberData.setMemNm(ksignUtil.ksignDec(\"P017\", memberData.getMemNm()));\nmemberData.setBirthDt(ksignUtil.ksignDec(\"P018\", memberData.getBirthDt()));\nmemberData.setJuminNo(ksignUtil.ksignDec(\"P019\", memberData.getJuminNo()));"
     }
   ]
@@ -504,29 +534,19 @@ Example: SELECT empNm, birthDt FROM employee WHERE empNm = #{searchName}
           "description": "INSERT into external_customer table"
         },
         "path": "Partner System → WebhookController.receiveCustomer() → ExternalCustomerService.saveFromPartner() → ExternalCustomerDao.insert() → DB",
-        "sensitive_columns": ["cust_nm", "birth_dt"],
-        "crypto_action": "ENCRYPT",
-        "crypto_timing": "In Service layer, right before DAO call"
+        "sensitive_columns": ["cust_nm", "birth_dt"]
       }
-    ],
-    "layer_responsibilities": {
-      "controller": "Receives webhook payload",
-      "service": "Encrypts external plaintext data before DB save",
-      "dao": "Stores encrypted data"
-    }
+    ]
   },
   "modification_instructions": [
     {
+      "flow_id": "FLOW_001",
       "file_name": "ExternalCustomerService.java",
       "target_method": "saveFromPartner",
       "action": "ENCRYPT",
       "reason": "FLOW_001: External API data is plaintext, must encrypt before DB storage",
-      "target_columns": [
-        {"column_name": "custNm", "policy_id": "P017"},
-        {"column_name": "birthDt", "policy_id": "P018"}
-      ],
+      "target_properties": ["custNm", "birthDt"],
       "insertion_point": "Right before externalCustomerDao.insert() call",
-      "data_object_name": "customerData",
       "code_pattern_hint": "customerData.setCustNm(ksignUtil.ksignEnc(\"P017\", customerData.getCustNm()));\ncustomerData.setBirthDt(ksignUtil.ksignEnc(\"P018\", customerData.getBirthDt()));"
     }
   ]
@@ -561,29 +581,19 @@ Example: SELECT empNm, birthDt FROM employee WHERE empNm = #{searchName}
           "description": "Store user info in HTTP session (as plaintext)"
         },
         "path": "DB → UserDao.selectByLoginId() → AuthService.authenticate() → Session",
-        "sensitive_columns": ["user_nm", "birth_dt"],
-        "crypto_action": "DECRYPT",
-        "crypto_timing": "In Service layer, after DAO return, before storing in session"
+        "sensitive_columns": ["user_nm", "birth_dt"]
       }
-    ],
-    "layer_responsibilities": {
-      "controller": "Handles login request, manages session",
-      "service": "Authenticates user, decrypts DB data for session storage",
-      "dao": "Returns encrypted data from DB"
-    }
+    ]
   },
   "modification_instructions": [
     {
+      "flow_id": "FLOW_001",
       "file_name": "AuthService.java",
       "target_method": "authenticate",
       "action": "DECRYPT",
       "reason": "FLOW_001: DB data is encrypted, must decrypt before storing plaintext in session",
-      "target_columns": [
-        {"column_name": "userNm", "policy_id": "P017"},
-        {"column_name": "birthDt", "policy_id": "P018"}
-      ],
+      "target_properties": ["userNm", "birthDt"],
       "insertion_point": "Right after userDao.selectByLoginId() return, before session.setAttribute()",
-      "data_object_name": "userInfo",
       "code_pattern_hint": "userInfo.setUserNm(ksignUtil.ksignDec(\"P017\", userInfo.getUserNm()));\nuserInfo.setBirthDt(ksignUtil.ksignDec(\"P018\", userInfo.getBirthDt()));"
     }
   ]
@@ -617,26 +627,19 @@ Example: SELECT empNm, birthDt FROM employee WHERE empNm = #{searchName}
           "description": "Return profile to client"
         },
         "path": "Session → ProfileController.getMyProfile() → Client",
-        "sensitive_columns": ["user_nm", "birth_dt"],
-        "crypto_action": "NONE",
-        "crypto_timing": "No encryption/decryption needed - session data is already plaintext"
+        "sensitive_columns": ["user_nm", "birth_dt"]
       }
-    ],
-    "layer_responsibilities": {
-      "controller": "Retrieves session data and returns to client",
-      "service": "Not involved",
-      "dao": "Not involved (no DB access)"
-    }
+    ]
   },
   "modification_instructions": [
     {
+      "flow_id": "FLOW_001",
       "file_name": "ProfileController.java",
       "target_method": "getMyProfile",
       "action": "SKIP",
       "reason": "FLOW_001: No DB access. Session data is already plaintext (decrypted during login). No encryption/decryption needed.",
-      "target_columns": [],
+      "target_properties": [],
       "insertion_point": "",
-      "data_object_name": "",
       "code_pattern_hint": ""
     }
   ]
@@ -670,29 +673,19 @@ Example: SELECT empNm, birthDt FROM employee WHERE empNm = #{searchName}
           "description": "UPDATE customer table"
         },
         "path": "CustomerController.updateBirthDt() → CustomerService.updateBirthDtByName() → CustomerDao.updateBirthDtByName() → DB",
-        "sensitive_columns": ["cust_nm", "birth_dt"],
-        "crypto_action": "ENCRYPT",
-        "crypto_timing": "In Service layer, right before DAO call. Encrypt BOTH search param (cust_nm) and update value (birth_dt)."
+        "sensitive_columns": ["cust_nm", "birth_dt"]
       }
-    ],
-    "layer_responsibilities": {
-      "controller": "Receives update request",
-      "service": "Encrypts both WHERE param and SET value",
-      "dao": "Executes UPDATE with encrypted values"
-    }
+    ]
   },
   "modification_instructions": [
     {
+      "flow_id": "FLOW_001",
       "file_name": "CustomerService.java",
       "target_method": "updateBirthDtByName",
       "action": "ENCRYPT",
       "reason": "FLOW_001: Both WHERE condition (cust_nm) and SET value (birth_dt) must be encrypted before UPDATE",
-      "target_columns": [
-        {"column_name": "custNm", "policy_id": "P017"},
-        {"column_name": "newBirthDt", "policy_id": "P018"}
-      ],
+      "target_properties": ["custNm", "newBirthDt"],
       "insertion_point": "Right before customerDao.updateBirthDtByName() call",
-      "data_object_name": "updateParams",
       "code_pattern_hint": "// Encrypt both search param and update value\nupdateParams.setCustNm(ksignUtil.ksignEnc(\"P017\", updateParams.getCustNm()));\nupdateParams.setNewBirthDt(ksignUtil.ksignEnc(\"P018\", updateParams.getNewBirthDt()));"
     }
   ]
@@ -708,13 +701,13 @@ Example: SELECT empNm, birthDt FROM employee WHERE empNm = #{searchName}
 | `overview` | Overview of the entire data flow | "The employee table stores user information..." |
 | `flows[].flow_id` | Flow identifier | "FLOW_001", "FLOW_002" |
 | `flows[].flow_name` | Flow name (function description) | "Employee Registration", "Employee Retrieval" |
-| `flows[].direction` | Data direction | "INBOUND_TO_DB", "DB_TO_OUTBOUND" |
-| `flows[].data_source.type` | Data source type | "HTTP_REQUEST", "SESSION", "DB", "EXTERNAL_API" |
-| `flows[].data_sink.type` | Data destination type | "DB", "HTTP_RESPONSE", "SESSION", "EXTERNAL_API" |
+| `flows[].direction` | Data direction | "INBOUND_TO_DB", "DB_TO_OUTBOUND", "BIDIRECTIONAL" |
+| `flows[].data_source.type` | Data source type (non-BIDIRECTIONAL) | "HTTP_REQUEST", "SESSION", "DB", "EXTERNAL_API" |
+| `flows[].data_sink.type` | Data destination type (non-BIDIRECTIONAL) | "DB", "HTTP_RESPONSE", "SESSION", "EXTERNAL_API" |
+| `flows[].INBOUND_TO_DB` | (BIDIRECTIONAL only) Inbound flow with data_source/data_sink | `{data_source: {...}, data_sink: {...}}` |
+| `flows[].DB_TO_OUTBOUND` | (BIDIRECTIONAL only) Outbound flow with data_source/data_sink | `{data_source: {...}, data_sink: {...}}` |
 | `flows[].path` | Call path (expressed with arrows) | "Controller → Service → DAO → DB" |
-| `flows[].crypto_action` | Required crypto action | "ENCRYPT", "DECRYPT", "NONE" |
-| `flows[].crypto_timing` | Encryption/decryption timing | "In Service layer, right before DAO call" |
-| `layer_responsibilities` | Role description for each layer | {"controller": "...", "service": "...", "dao": "..."} |
+| `flows[].sensitive_columns` | Columns requiring encryption | ["emp_nm", "birth_dt", "jumin_no"] |
 
 ---
 
@@ -723,3 +716,5 @@ Example: SELECT empNm, birthDt FROM employee WHERE empNm = #{searchName}
 Based on the information above, **analyze the Data Flow first**, then output modification instructions for each file in JSON format based on that analysis.
 
 **Important**: `data_flow_analysis` is the analysis result of the overall data flow, and `modification_instructions` are specific code modification instructions based on that analysis. Clearly distinguish the roles of these two sections.
+
+**REMINDER: Output ONLY the JSON object. Start directly with `{` and end with `}`. No other text allowed.**

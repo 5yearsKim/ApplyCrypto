@@ -14,17 +14,20 @@ Based on the information below, output specific modification instructions in JSO
 This project uses the **KSign** encryption framework with `ksignUtil`:
 
 ### Encryption/Decryption Methods
+
 - **Encryption**: `ksignUtil.ksignEnc(policyId, inputValue)` - Returns encrypted string
 - **Decryption**: `ksignUtil.ksignDec(policyId, inputValue)` - Returns decrypted string
 
 ### Policy IDs (★ ONLY these 3 fields are encryption targets)
-| Field Type | Policy ID | Column Name Patterns |
-|------------|-----------|---------------------|
-| **Name (이름)** | `"P017"` | name, userName, user_name, fullName, firstName, lastName, custNm, CUST_NM, empNm, EMP_NM |
-| **Date of Birth (생년월일)** | `"P018"` | dob, dateOfBirth, birthDate, birthday, dayOfBirth, birthDt, BIRTH_DT |
-| **Resident Number (주민번호)** | `"P019"` | jumin, juminNumber, ssn, residentNumber, juminNo, JUMIN_NO, residentNo |
+
+| Field Type                     | Policy ID | Column Name Patterns                                                                     |
+| ------------------------------ | --------- | ---------------------------------------------------------------------------------------- |
+| **Name (이름)**                | `"P017"`  | name, userName, user_name, fullName, firstName, lastName, custNm, CUST_NM, empNm, EMP_NM |
+| **Date of Birth (생년월일)**   | `"P018"`  | dob, dateOfBirth, birthDate, birthday, dayOfBirth, birthDt, BIRTH_DT                     |
+| **Resident Number (주민번호)** | `"P019"`  | jumin, juminNumber, ssn, residentNumber, juminNo, JUMIN_NO, residentNo                   |
 
 ### Important: Only 3 Field Types
+
 **ONLY encrypt/decrypt the above 3 field types (Name, DOB, Jumin).**
 Other fields like phone, address, gender, etc. are **NOT** encryption targets - do NOT add encryption for them.
 
@@ -41,79 +44,181 @@ This is the specific table that requires encryption/decryption modifications. An
 {{ table_info }}
 
 **Instructions:**
+
 1. Only analyze SQL queries that access the **target table** above
 2. Only analyze methods that are part of call chains leading to the **target table**
 3. Generate modification instructions ONLY for files involved in **target table** operations
 
-### VO Field Mapping & SQL Usage Summary (★ Pre-analyzed from Phase 1)
+### Data Mapping Summary (★ Pre-analyzed from Phase 1)
 
-The following is a **comprehensive** VO and SQL mapping extracted from the previous analysis phase.
-This vo_info contains ALL the information you need about VO fields and SQL queries.
+The following `mapping_info` was extracted in Phase 1 and contains all SQL query analysis results.
 
-**vo_info Structure:**
-1. **vo_mappings**: Each VO class with field details
-   - `field_name`, `getter`, `setter`: For code generation
-   - `policy_id`: P017 (name), P018 (DOB), P019 (jumin)
-   - `mapped_sql_columns` and `mapped_sql_aliases`: SQL column mappings
+**mapping_info Structure:**
 
-2. **sql_column_usage**: SQL query summary
-   - `query_id`: Maps to DAO method name
-   - `query_type`: SELECT, INSERT, UPDATE, DELETE
-   - `encryption_target_columns`: Columns that need encryption/decryption
-   - `target_vo_class`: Which VO class is used for this query
+```json
+{
+  "summary": {
+    "total_queries": 3,
+    "encryption_needed_count": 2
+  },
+  "queries": [
+    {
+      "query_id": "com.example.mapper.UserMapper.selectUser",
+      "command_type": "SELECT | INSERT | UPDATE | DELETE",
+      "sql_summary": "Brief description of query purpose with target columns",
+      "input_mapping": {
+        "type_category": "VO | MAP | PRIMITIVE | NONE",
+        "class_name": "Simple class name (e.g., UserVO, HashMap)",
+        "encryption_fields": [
+          {
+            "column_name": "DB column name",
+            "java_field": "Java field name or Map key",
+            "getter": "getXxx (only for VO)",
+            "setter": "setXxx (only for VO)"
+          }
+        ]
+      },
+      "output_mapping": {
+        "type_category": "VO | MAP | PRIMITIVE | NONE",
+        "class_name": "Simple class name",
+        "encryption_fields": [...]
+      }
+    }
+  ]
+}
+```
 
-**Use this information to:**
-- Determine which methods call which SQL queries (via query_id)
-- Identify what crypto action is needed (INSERT/UPDATE → ENCRYPT, SELECT → DECRYPT)
-- Generate accurate getter/setter calls using vo_mappings
+**Key Fields to Use:**
 
-{{ vo_info }}
+| Field | Description | How to Use |
+|-------|-------------|------------|
+| `query_id` | Matches DAO/Mapper method name | Match with call chain to identify which query is called |
+| `command_type` | SQL command type | `SELECT` → DECRYPT results, `INSERT/UPDATE` → ENCRYPT inputs |
+| `sql_summary` | Query purpose description | Understand what the query does |
+| `java_field` | Field name (VO) or Map key | Use for code generation (e.g., `vo.getJavaField()` or `map.get("java_field")`) |
+| `getter/setter` | Methods for VO types | Use directly in code_pattern_hint |
+
+**Determining ENCRYPT/DECRYPT action:**
+
+Based on `command_type` and mapping location:
+- `input_mapping` fields with `INSERT/UPDATE` command → ENCRYPT before DB operation
+- `output_mapping` fields with `SELECT` command → DECRYPT after DB operation
+- `input_mapping` fields used in WHERE clause → ENCRYPT (search parameter must match encrypted DB data)
+
+**For Map types with aliases:**
+
+When SQL uses aliases (e.g., `SELECT jumin_no AS ssn`), `java_field` contains the alias:
+```json
+{
+  "column_name": "jumin_no",
+  "java_field": "ssn"
+}
+```
+Use the alias for Map operations: `map.get("ssn")` / `map.put("ssn", ...)`
+
+{{ mapping_info }}
 
 ### Method Call Chain (Endpoint → SQL)
+
 Call path from controller to SQL:
 {{ call_stacks }}
 
-### Source Files to Modify ({{ file_count }} files)
-{{ source_files }}
+### Source Files to Modify
 
-### Current Layer: {{ layer_name }}
+{{ source_files }}
 
 ---
 
 ## Analysis Guidelines
 
 ### 1. Data Flow Analysis (Per Call Chain)
+
 **For each call chain in call_stacks**, analyze the data flow:
-1. Identify the SQL query type from `vo_info.sql_column_usage` (match by query_id ↔ DAO method)
-2. Determine crypto action:
-   - **INSERT/UPDATE queries** → Encryption needed **before** saving to DB
-   - **SELECT queries** → Decryption needed **after** retrieving from DB
-3. Generate modification instructions for each flow
 
-### 2. Using VO Field Mapping (from vo_info)
-From the vo_info.vo_mappings:
-- Use `getter` and `setter` names for generating code patterns
-- Use `policy_id` to determine which policy ID to use (P017, P018, P019)
-- Use `mapped_sql_columns` to match VO fields with SQL query columns
+1. Find the matching SQL query in `mapping_info.queries` by matching `query_id` with DAO method.
+2. Check `target_columns_usage` to understand how columns are used.
+3. Use `suggested_action` from `encryption_fields` to determine crypto action:
+   - `input_mapping.encryption_fields` with `suggested_action: "ENCRYPT"` → ENCRYPT before DAO call
+   - `output_mapping.encryption_fields` with `suggested_action: "DECRYPT"` → DECRYPT after DAO returns
 
-From the vo_info.sql_column_usage:
-- Use `query_id` to match call chain methods with SQL queries
-- Use `query_type` to determine ENCRYPT (INSERT/UPDATE) or DECRYPT (SELECT)
-- Use `encryption_target_columns` to verify which columns need crypto
+### 2. Using Data Mapping (from mapping_info)
 
-### 3. Modification Location Decision
-- Service layer **before/after** DAO/Mapper calls is the typical modification location
-- If Controller directly calls DAO, modify in Controller
+**If Input/Output is a VO:**
+
+- Use `getter` and `setter` from `encryption_fields` directly
+- Example: `vo.setEmpNm(ksignUtil.ksignEnc("P017", vo.getEmpNm()));`
+
+**If Input/Output is a Map:**
+
+- Use `java_field` as the Map key (this includes aliases if SQL uses them)
+- Example: `map.put("ssn", ksignUtil.ksignDec("P019", (String)map.get("ssn")));`
+
+**If Input/Output is Primitive:**
+
+- It's a single value (e.g., String param). Encrypt/Decrypt the variable directly.
+- Example: `jumin = ksignUtil.ksignEnc("P019", jumin);`
+
+### 3. Modification Location Decision (★ CRITICAL: Service Layer Priority)
+
+**IMPORTANT: Always prioritize Service layer for encryption/decryption logic.**
+
+**Why Service Layer First?**
+1. **Consistency**: The same file may appear in multiple modification contexts (different tables). Consistent placement in Service layer prevents duplicate encryption/decryption.
+2. **Separation of Concerns**: Controller handles HTTP request/response only. Service handles business logic including encryption/decryption.
+3. **Maintainability**: All crypto logic in one layer makes it easier to audit and maintain.
+
+**Decision Rules:**
+| Call Chain Pattern | Modification Location | Reason |
+|-------------------|----------------------|--------|
+| Controller → Service → DAO | **Service** (preferred) | Standard pattern, crypto in Service |
+| Controller → DAO (no Service) | Controller | No Service layer exists |
+| Service → DAO (no Controller) | Service | Batch/scheduled job pattern |
+
+**⚠️ WARNING: Never add crypto logic to BOTH Controller AND Service for the same data flow!**
+This causes double encryption/decryption which corrupts data.
+
+```java
+// ❌ WRONG: Crypto in both layers
+// Controller
+vo.setName(ksignUtil.ksignEnc("P017", vo.getName()));  // First encryption
+employeeService.save(vo);
+
+// Service
+vo.setName(ksignUtil.ksignEnc("P017", vo.getName()));  // Double encryption! DATA CORRUPTED!
+employeeDao.insert(vo);
+
+// ✅ CORRECT: Crypto only in Service layer
+// Controller - NO crypto logic
+employeeService.save(vo);
+
+// Service - crypto logic HERE
+vo.setName(ksignUtil.ksignEnc("P017", vo.getName()));
+employeeDao.insert(vo);
+```
+
+**When to SKIP Controller files:**
+- If the call chain includes a Service layer, mark Controller modifications as `action: "SKIP"` with reason: "Encryption/decryption handled in Service layer"
 
 ### 4. Minimize Modification Scope
+
 - Maintain existing code structure and logic as much as possible
 - Only add encryption/decryption logic
 - Do not modify unnecessary files
 
 ---
 
-## Output Format (Must output in JSON format)
+## Output Format (★★★ CRITICAL: JSON ONLY ★★★)
 
+**IMPORTANT OUTPUT RULES:**
+1. Output **ONLY** valid JSON - no explanations, no markdown, no comments before or after
+2. Do **NOT** include ```json or ``` markers
+3. Do **NOT** add trailing commas (e.g., `{"a": 1,}` is INVALID)
+4. Do **NOT** include JavaScript-style comments (`//` or `/* */`)
+5. Use **double quotes** for all strings and keys
+6. Ensure all brackets and braces are properly closed
+7. Use `null` instead of `undefined` or empty values
+
+**Expected JSON Structure:**
 ```json
 {
   "data_flow_analysis": {
@@ -122,7 +227,7 @@ From the vo_info.sql_column_usage:
       {
         "flow_id": "FLOW_001",
         "flow_name": "User Registration Flow",
-        "direction": "INBOUND_TO_DB",
+        "direction": "INBOUND_TO_DB | DB_TO_OUTBOUND | BIDIRECTIONAL",
         "data_source": {
           "type": "HTTP_REQUEST | SESSION | DB | EXTERNAL_API",
           "description": "Where the data comes from"
@@ -132,56 +237,91 @@ From the vo_info.sql_column_usage:
           "description": "Where the data goes to"
         },
         "path": "Controller.method() → Service.method() → DAO.method() → DB",
-        "sensitive_columns": ["last_name", "jumin_number"],
-        "crypto_action": "ENCRYPT",
-        "crypto_timing": "Before DB save (in Service layer)"
+        "sensitive_columns": ["last_name", "jumin_number"]
       }
-    ],
-    "layer_responsibilities": {
-      "controller": "Handles HTTP request/response, only passes data",
-      "service": "Business logic, handles encryption/decryption",
-      "dao": "Only handles DB access, passes encrypted data as-is"
-    }
+    ]
   },
   "modification_instructions": [
     {
+      "flow_id": "FLOW_001 (matches data_flow_analysis.flows[].flow_id)",
       "file_name": "File name (e.g., UserService.java)",
       "target_method": "Method name to modify",
-      "action": "ENCRYPT | DECRYPT | SKIP",
+      "action": "ENCRYPT | DECRYPT | ENCRYPT_THEN_DECRYPT | SKIP",
       "reason": "Reason for this modification (or reason for SKIP)",
-      "target_columns": [
-        {
-          "column_name": "Column name in code/VO (e.g., empNm, birthDt)",
-          "policy_id": "Policy ID for this field type (P017, P018, or P019)"
-        }
-      ],
+      "target_properties": ["empNm", "birthDt", "juminNo"],
       "insertion_point": "Code insertion location description (e.g., 'right before dao.insert(list) call')",
-      "data_object_name": "Target object name for encryption/decryption (e.g., list, userVO, reqData)",
       "code_pattern_hint": "Code pattern hint to insert"
     }
   ]
 }
 ```
 
+### BIDIRECTIONAL Flow Structure
+
+For `direction: "BIDIRECTIONAL"` (e.g., search with encrypted WHERE + decrypted result), use nested objects for each direction:
+
+```json
+{
+  "flow_id": "FLOW_001",
+  "flow_name": "Customer Search with Encrypted WHERE",
+  "direction": "BIDIRECTIONAL",
+  "INBOUND_TO_DB": {
+    "data_source": {
+      "type": "HTTP_REQUEST",
+      "description": "Search parameter (name) from user input"
+    },
+    "data_sink": {
+      "type": "DB",
+      "description": "Query executes against encrypted DB data"
+    }
+  },
+  "DB_TO_OUTBOUND": {
+    "data_source": {
+      "type": "DB",
+      "description": "Encrypted results from database"
+    },
+    "data_sink": {
+      "type": "HTTP_RESPONSE",
+      "description": "Decrypted results returned to client"
+    }
+  },
+  "path": "Controller → Service.search() → DAO → DB → Service → Controller → Client",
+  "sensitive_columns": ["cust_nm", "birth_dt"]
+}
+```
+
 ### Field Descriptions
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| `file_name` | File name to modify | `UserService.java`, `EmpController.java` |
-| `target_method` | Method name to modify | `saveUser`, `getUserList` |
-| `action` | Action to perform | `ENCRYPT`, `DECRYPT`, `SKIP` |
-| `target_columns` | Columns to encrypt/decrypt (ONLY name, DOB, jumin) | `[{"column_name": "empNm", "policy_id": "P017"}]` |
-| `insertion_point` | Insertion location description | `right before dao.insert() call`, `right before return list;` |
-| `data_object_name` | Target data object | `list`, `userVO`, `result` |
-| `code_pattern_hint` | Code pattern example | `vo.setEmpNm(ksignUtil.ksignEnc("P017", vo.getEmpNm()));` |
+| Field               | Description                                              | Example                                                       |
+| ------------------- | -------------------------------------------------------- | ------------------------------------------------------------- |
+| `flow_id`           | Reference to data_flow_analysis.flows[].flow_id          | `FLOW_001`, `FLOW_002`                                        |
+| `file_name`         | File name to modify                                      | `UserService.java`, `EmpController.java`                      |
+| `target_method`     | Method name to modify                                    | `saveUser`, `getUserList`                                     |
+| `action`            | Action to perform                                        | `ENCRYPT`, `DECRYPT`, `ENCRYPT_THEN_DECRYPT`, `SKIP`          |
+| `target_properties` | Properties to encrypt/decrypt (array of strings)         | `["empNm", "birthDt", "juminNo"]`                             |
+| `insertion_point`   | Insertion location description                           | `right before dao.insert() call`, `right before return list;` |
+| `code_pattern_hint` | Code pattern example                                     | `vo.setEmpNm(ksignUtil.ksignEnc("P017", vo.getEmpNm()));`     |
+
+### ⚠️ CRITICAL: Every Flow MUST Have a modification_instruction Entry ⚠️
+
+**For EVERY flow in `data_flow_analysis.flows`, you MUST output a corresponding entry in `modification_instructions`.**
+
+- If the flow requires encryption/decryption → output with `action: "ENCRYPT"` or `action: "DECRYPT"`
+- If the flow does NOT require modification → output with `action: "SKIP"` and explain `reason`
+
+**DO NOT skip any flow!** The Execution phase relies on explicit SKIP entries to know which flows were analyzed and intentionally skipped.
+
+**Example:** If `data_flow_analysis.flows` contains FLOW_001, FLOW_002, FLOW_003, then `modification_instructions` MUST contain entries for ALL three flows (even if some are SKIP).
 
 ### Important Notes
 
-1. **When action is SKIP**: Specify in `reason` why the file/method does not need modification
-2. **target_columns**: ONLY include name (P017), DOB (P018), or jumin (P019) fields. Do NOT include other fields.
+1. **When action is SKIP**: Specify in `reason` which flow (flow_id) this refers to and why no modification is needed
+2. **target_properties**: Array of property names (strings). ONLY include name, DOB, or jumin fields. Do NOT include other fields.
 3. **insertion_point**: Describe specifically so code can be inserted in the next step
-4. **code_pattern_hint**: Use `ksignUtil.ksignEnc(policyId, value)` for encryption, `ksignUtil.ksignDec(policyId, value)` for decryption
-5. **Use vo_info mapping**: Reference the getter/setter names from vo_info for accurate code patterns
+4. **code_pattern_hint**:
+   - For VO: Use getter/setter from mapping_info (e.g., `vo.setEmpNm(ksignUtil.ksignEnc("P017", vo.getEmpNm()));`)
+   - For Map: Use java_field as key (e.g., `map.put("ssn", ksignUtil.ksignDec("P019", (String)map.get("ssn")));`)
+5. **Use mapping_info**: Reference `java_field`, `getter`, `setter` from mapping_info for accurate code patterns
 
 ---
 
@@ -189,20 +329,21 @@ From the vo_info.sql_column_usage:
 
 ### Core Principle: Encrypt/Decrypt ONLY when data crosses the DB boundary
 
-| Data Source | Data Sink | Action | Reason |
-|-------------|-----------|--------|--------|
-| HTTP_REQUEST | DB | **ENCRYPT** | Plaintext from client must be encrypted before DB storage |
-| DB | HTTP_RESPONSE | **DECRYPT** | Encrypted data from DB must be decrypted before sending to client |
-| DB | EXTERNAL_API | **DECRYPT** | External systems expect plaintext data |
-| EXTERNAL_API | DB | **ENCRYPT** | Data from external systems must be encrypted before DB storage |
-| SESSION | DB | **ENCRYPT** | Session data is plaintext, must be encrypted for DB |
-| DB | SESSION | **DECRYPT** | Encrypted DB data must be decrypted for session storage |
-| SESSION | HTTP_RESPONSE | **NONE** | Session data is already plaintext, no decryption needed |
-| HTTP_REQUEST | SESSION | **NONE** | No DB involved, no encryption needed |
+| Data Source  | Data Sink     | Action      | Reason                                                            |
+| ------------ | ------------- | ----------- | ----------------------------------------------------------------- |
+| HTTP_REQUEST | DB            | **ENCRYPT** | Plaintext from client must be encrypted before DB storage         |
+| DB           | HTTP_RESPONSE | **DECRYPT** | Encrypted data from DB must be decrypted before sending to client |
+| DB           | EXTERNAL_API  | **DECRYPT** | External systems expect plaintext data                            |
+| EXTERNAL_API | DB            | **ENCRYPT** | Data from external systems must be encrypted before DB storage    |
+| SESSION      | DB            | **ENCRYPT** | Session data is plaintext, must be encrypted for DB               |
+| DB           | SESSION       | **DECRYPT** | Encrypted DB data must be decrypted for session storage           |
+| SESSION      | HTTP_RESPONSE | **NONE**    | Session data is already plaintext, no decryption needed           |
+| HTTP_REQUEST | SESSION       | **NONE**    | No DB involved, no encryption needed                              |
 
 ### ⚠️ CRITICAL: Session Data is ALWAYS Plaintext - NEVER Decrypt
 
 **Session data has already been decrypted during login.** When you see code like:
+
 ```java
 MemberVO member = (MemberVO) session.getAttribute("member");
 String userName = member.getUserNm();  // This is ALREADY plaintext!
@@ -210,32 +351,82 @@ String userName = member.getUserNm();  // This is ALREADY plaintext!
 
 **DO NOT decrypt session data!** The decryption already happened when the user logged in (DB → Session flow).
 
-| Pattern | Action | Reason |
-|---------|--------|--------|
-| `session.getAttribute(...)` → use data | **NO DECRYPT** | Session stores plaintext |
-| `session.getAttribute(...)` → save to DB | **ENCRYPT only** | Plaintext → DB needs encryption |
-| `session.getAttribute(...)` → return to client | **NO DECRYPT** | Already plaintext |
+| Pattern                                        | Action           | Reason                          |
+| ---------------------------------------------- | ---------------- | ------------------------------- |
+| `session.getAttribute(...)` → use data         | **NO DECRYPT**   | Session stores plaintext        |
+| `session.getAttribute(...)` → save to DB       | **ENCRYPT only** | Plaintext → DB needs encryption |
+| `session.getAttribute(...)` → return to client | **NO DECRYPT**   | Already plaintext               |
 
 ### Special Case: SELECT with WHERE clause on sensitive columns
 
-When a SELECT query has a WHERE clause that references sensitive columns (name, DOB, or jumin):
+When `target_columns_usage` shows a column used in WHERE:
+
 1. **First**: ENCRYPT the search parameter (to match encrypted data in DB)
 2. **Then**: Execute the query
 3. **Finally**: DECRYPT the result (to return plaintext to caller)
+
+Look for this pattern in mapping_info:
+```json
+"target_columns_usage": {
+  "jumin_no": "WHERE",  // → ENCRYPT the input parameter
+  "emp_nm": "SELECT"    // → DECRYPT the output
+}
+```
 
 ---
 
 ## Example Output
 
-### Example: Basic INSERT and SELECT
+### Example: INSERT and SELECT with VO
 
-**Input Summary:**
-- INSERT query with emp_nm, birth_dt, jumin_no
-- SELECT query returning the same columns
-- vo_info shows: empNm→P017, birthDt→P018, juminNo→P019
-- Service layer calls DAO
+**mapping_info (from Phase 1):**
+```json
+{
+  "queries": [
+    {
+      "query_id": "EmpMapper.insertEmp",
+      "command_type": "INSERT",
+      "sql_summary": "Employee registration - INSERT emp_nm, birth_dt, jumin_no",
+      "input_mapping": {
+        "type_category": "VO",
+        "class_name": "EmpVO",
+        "encryption_fields": [
+          {"column_name": "emp_nm", "java_field": "empNm", "getter": "getEmpNm", "setter": "setEmpNm"},
+          {"column_name": "birth_dt", "java_field": "birthDt", "getter": "getBirthDt", "setter": "setBirthDt"},
+          {"column_name": "jumin_no", "java_field": "juminNo", "getter": "getJuminNo", "setter": "setJuminNo"}
+        ]
+      },
+      "output_mapping": {
+        "type_category": "NONE",
+        "class_name": null,
+        "encryption_fields": []
+      }
+    },
+    {
+      "query_id": "EmpMapper.selectEmp",
+      "command_type": "SELECT",
+      "sql_summary": "Employee retrieval - SELECT emp_nm, birth_dt, jumin_no",
+      "input_mapping": {
+        "type_category": "PRIMITIVE",
+        "class_name": "String",
+        "encryption_fields": []
+      },
+      "output_mapping": {
+        "type_category": "VO",
+        "class_name": "EmpVO",
+        "encryption_fields": [
+          {"column_name": "emp_nm", "java_field": "empNm", "getter": "getEmpNm", "setter": "setEmpNm"},
+          {"column_name": "birth_dt", "java_field": "birthDt", "getter": "getBirthDt", "setter": "setBirthDt"},
+          {"column_name": "jumin_no", "java_field": "juminNo", "getter": "getJuminNo", "setter": "setJuminNo"}
+        ]
+      }
+    }
+  ]
+}
+```
 
 **Output:**
+
 ```json
 {
   "data_flow_analysis": {
@@ -246,58 +437,397 @@ When a SELECT query has a WHERE clause that references sensitive columns (name, 
         "flow_name": "Employee Registration (INSERT)",
         "direction": "INBOUND_TO_DB",
         "data_source": {"type": "HTTP_REQUEST", "description": "Client POST request"},
-        "data_sink": {"type": "DB", "description": "INSERT into employee"},
+        "data_sink": {"type": "DB", "description": "INSERT into TB_EMP"},
         "path": "Controller → Service.save() → DAO.insert() → DB",
-        "sensitive_columns": ["emp_nm", "birth_dt", "jumin_no"],
-        "crypto_action": "ENCRYPT",
-        "crypto_timing": "In Service, right before DAO call"
+        "sensitive_columns": ["emp_nm", "birth_dt", "jumin_no"]
       },
       {
         "flow_id": "FLOW_002",
         "flow_name": "Employee Retrieval (SELECT)",
         "direction": "DB_TO_OUTBOUND",
-        "data_source": {"type": "DB", "description": "SELECT from employee"},
+        "data_source": {"type": "DB", "description": "SELECT from TB_EMP"},
         "data_sink": {"type": "HTTP_RESPONSE", "description": "JSON response"},
         "path": "DB → DAO.select() → Service.get() → Controller → Client",
-        "sensitive_columns": ["emp_nm", "birth_dt", "jumin_no"],
-        "crypto_action": "DECRYPT",
-        "crypto_timing": "In Service, right after DAO return"
+        "sensitive_columns": ["emp_nm", "birth_dt", "jumin_no"]
       }
-    ],
-    "layer_responsibilities": {
-      "controller": "HTTP handling only",
-      "service": "Encryption/decryption logic here",
-      "dao": "DB access only"
-    }
+    ]
   },
   "modification_instructions": [
     {
+      "flow_id": "FLOW_001",
       "file_name": "EmployeeService.java",
       "target_method": "saveEmployee",
       "action": "ENCRYPT",
-      "reason": "FLOW_001: Encrypt before DB storage",
-      "target_columns": [
-        {"column_name": "empNm", "policy_id": "P017"},
-        {"column_name": "birthDt", "policy_id": "P018"},
-        {"column_name": "juminNo", "policy_id": "P019"}
-      ],
+      "reason": "FLOW_001: INSERT command requires encryption before DB save",
+      "target_properties": ["empNm", "birthDt", "juminNo"],
       "insertion_point": "Right before employeeDao.insert(vo) call",
-      "data_object_name": "vo",
       "code_pattern_hint": "vo.setEmpNm(ksignUtil.ksignEnc(\"P017\", vo.getEmpNm()));\nvo.setBirthDt(ksignUtil.ksignEnc(\"P018\", vo.getBirthDt()));\nvo.setJuminNo(ksignUtil.ksignEnc(\"P019\", vo.getJuminNo()));"
     },
     {
+      "flow_id": "FLOW_002",
       "file_name": "EmployeeService.java",
       "target_method": "getEmployeeById",
       "action": "DECRYPT",
-      "reason": "FLOW_002: Decrypt after DB retrieval",
-      "target_columns": [
-        {"column_name": "empNm", "policy_id": "P017"},
-        {"column_name": "birthDt", "policy_id": "P018"},
-        {"column_name": "juminNo", "policy_id": "P019"}
-      ],
+      "reason": "FLOW_002: SELECT command requires decryption after DB retrieval",
+      "target_properties": ["empNm", "birthDt", "juminNo"],
       "insertion_point": "Right after DAO return, before return statement",
-      "data_object_name": "result",
       "code_pattern_hint": "result.setEmpNm(ksignUtil.ksignDec(\"P017\", result.getEmpNm()));\nresult.setBirthDt(ksignUtil.ksignDec(\"P018\", result.getBirthDt()));\nresult.setJuminNo(ksignUtil.ksignDec(\"P019\", result.getJuminNo()));"
+    }
+  ]
+}
+```
+
+### Example: Map with Alias
+
+**mapping_info shows:**
+```json
+{
+  "output_mapping": {
+    "type_category": "MAP",
+    "class_name": "HashMap",
+    "encryption_fields": [
+      {"column_name": "jumin_no", "java_field": "ssn"}
+    ]
+  }
+}
+```
+
+**code_pattern_hint for Map:**
+```java
+resultMap.put("ssn", ksignUtil.ksignDec("P019", (String)resultMap.get("ssn")));
+```
+
+---
+
+### Example: Session data to DB (Session → DB) ★ IMPORTANT
+
+**Scenario:**
+- SQL: `INSERT INTO audit_log (user_nm, action) VALUES (#{userNm}, #{action})`
+- Method chain: `AuditService.logAction()` → `AuditDao.insertLog()`
+- Note: `userNm` is retrieved from HTTP Session (already plaintext)
+
+**Key Point:** Session data is ALREADY PLAINTEXT (was decrypted during login). Only ENCRYPT is needed before DB save. **DO NOT decrypt session data!**
+
+**Output:**
+```json
+{
+  "data_flow_analysis": {
+    "overview": "Audit logging saves user action with user name from session. Session data is already plaintext, so only encryption is needed before DB save.",
+    "flows": [
+      {
+        "flow_id": "FLOW_001",
+        "flow_name": "Audit Log Insert (Session → DB)",
+        "direction": "INBOUND_TO_DB",
+        "data_source": {"type": "SESSION", "description": "User name from HTTP session (already plaintext)"},
+        "data_sink": {"type": "DB", "description": "INSERT into audit_log table"},
+        "path": "Session → AuditService.logAction() → AuditDao.insertLog() → DB",
+        "sensitive_columns": ["user_nm"]
+      }
+    ]
+  },
+  "modification_instructions": [
+    {
+      "flow_id": "FLOW_001",
+      "file_name": "AuditService.java",
+      "target_method": "logAction",
+      "action": "ENCRYPT",
+      "reason": "FLOW_001: Session data is plaintext, must encrypt before DB storage. No decryption needed.",
+      "target_properties": ["userNm"],
+      "insertion_point": "Right before auditDao.insertLog() call",
+      "code_pattern_hint": "logData.setUserNm(ksignUtil.ksignEnc(\"P017\", logData.getUserNm()));"
+    }
+  ]
+}
+```
+
+---
+
+### Example: DB to Session storage (Login scenario)
+
+**Scenario:**
+- SQL: `SELECT user_nm, birth_dt FROM users WHERE login_id = #{loginId}`
+- Method chain: `LoginController.login()` → `AuthService.authenticate()` → `UserDao.selectByLoginId()` → Session storage
+- Note: After successful login, user info is stored in session for later use
+
+**Key Point:** Session should store PLAINTEXT for easy access. DB data must be DECRYPTED before session storage.
+
+**Output:**
+```json
+{
+  "data_flow_analysis": {
+    "overview": "User authentication retrieves encrypted data from DB and stores plaintext in session for easy access during user's session.",
+    "flows": [
+      {
+        "flow_id": "FLOW_001",
+        "flow_name": "User Login (DB → Session)",
+        "direction": "DB_TO_OUTBOUND",
+        "data_source": {"type": "DB", "description": "SELECT user info (encrypted in DB)"},
+        "data_sink": {"type": "SESSION", "description": "Store user info in HTTP session (as plaintext)"},
+        "path": "DB → UserDao.selectByLoginId() → AuthService.authenticate() → Session",
+        "sensitive_columns": ["user_nm", "birth_dt"]
+      }
+    ]
+  },
+  "modification_instructions": [
+    {
+      "flow_id": "FLOW_001",
+      "file_name": "AuthService.java",
+      "target_method": "authenticate",
+      "action": "DECRYPT",
+      "reason": "FLOW_001: DB data is encrypted, must decrypt before storing plaintext in session",
+      "target_properties": ["userNm", "birthDt"],
+      "insertion_point": "Right after userDao.selectByLoginId() return, before session.setAttribute()",
+      "code_pattern_hint": "userInfo.setUserNm(ksignUtil.ksignDec(\"P017\", userInfo.getUserNm()));\nuserInfo.setBirthDt(ksignUtil.ksignDec(\"P018\", userInfo.getBirthDt()));"
+    }
+  ]
+}
+```
+
+---
+
+### Example: Session to HTTP Response (No crypto needed) ★ IMPORTANT
+
+**Scenario:**
+- Method chain: `ProfileController.getMyProfile()` → retrieves data from Session → returns HTTP response
+- Note: No DB access, data comes directly from session
+
+**Key Point:** Session data is ALREADY PLAINTEXT. NO encryption/decryption needed. **This should be SKIP.**
+
+**Output:**
+```json
+{
+  "data_flow_analysis": {
+    "overview": "User profile is retrieved directly from session and returned to client. Session stores plaintext (decrypted during login), so NO crypto operation is needed.",
+    "flows": [
+      {
+        "flow_id": "FLOW_001",
+        "flow_name": "Profile from Session (No DB)",
+        "direction": "SESSION_TO_OUTBOUND",
+        "data_source": {"type": "SESSION", "description": "User profile stored in session (already plaintext)"},
+        "data_sink": {"type": "HTTP_RESPONSE", "description": "Return profile to client"},
+        "path": "Session → ProfileController.getMyProfile() → Client",
+        "sensitive_columns": ["user_nm", "birth_dt"]
+      }
+    ]
+  },
+  "modification_instructions": [
+    {
+      "flow_id": "FLOW_001",
+      "file_name": "ProfileController.java",
+      "target_method": "getMyProfile",
+      "action": "SKIP",
+      "reason": "FLOW_001: No DB access. Session data is already plaintext (decrypted during login). No encryption/decryption needed.",
+      "target_properties": [],
+      "insertion_point": "",
+      "code_pattern_hint": ""
+    }
+  ]
+}
+```
+
+---
+
+### Example: DB to External API
+
+**Scenario:**
+- SQL: `SELECT mem_nm, birth_dt, jumin_no FROM member WHERE id = #{memberId}`
+- Method chain: `IntegrationController.sendToPartner()` → `MemberService.getMemberForExport()` → `MemberDao.selectById()` → `ExternalApiClient.sendMemberInfo()`
+- Note: External partner system expects plaintext data
+
+**Output:**
+```json
+{
+  "data_flow_analysis": {
+    "overview": "Member data is retrieved from DB and sent to external partner API. External systems expect plaintext, so encrypted DB data must be decrypted.",
+    "flows": [
+      {
+        "flow_id": "FLOW_001",
+        "flow_name": "Member Export to External API",
+        "direction": "DB_TO_OUTBOUND",
+        "data_source": {"type": "DB", "description": "SELECT member data (encrypted in DB)"},
+        "data_sink": {"type": "EXTERNAL_API", "description": "Partner system API expects plaintext"},
+        "path": "DB → MemberDao.selectById() → MemberService.getMemberForExport() → ExternalApiClient → Partner",
+        "sensitive_columns": ["mem_nm", "birth_dt", "jumin_no"]
+      }
+    ]
+  },
+  "modification_instructions": [
+    {
+      "flow_id": "FLOW_001",
+      "file_name": "MemberService.java",
+      "target_method": "getMemberForExport",
+      "action": "DECRYPT",
+      "reason": "FLOW_001: External API expects plaintext. Must decrypt DB data before sending.",
+      "target_properties": ["memNm", "birthDt", "juminNo"],
+      "insertion_point": "Right after memberDao.selectById() return, before externalApiClient call",
+      "code_pattern_hint": "memberData.setMemNm(ksignUtil.ksignDec(\"P017\", memberData.getMemNm()));\nmemberData.setBirthDt(ksignUtil.ksignDec(\"P018\", memberData.getBirthDt()));\nmemberData.setJuminNo(ksignUtil.ksignDec(\"P019\", memberData.getJuminNo()));"
+    }
+  ]
+}
+```
+
+---
+
+### Example: External API to DB
+
+**Scenario:**
+- SQL: `INSERT INTO external_customer (cust_nm, birth_dt) VALUES (#{custNm}, #{birthDt})`
+- Method chain: `WebhookController.receiveCustomer()` → `ExternalCustomerService.saveFromPartner()` → `ExternalCustomerDao.insert()`
+- Note: Data received from external partner system (plaintext)
+
+**Output:**
+```json
+{
+  "data_flow_analysis": {
+    "overview": "Customer data received from external partner webhook. External data arrives as plaintext and must be encrypted before storing in DB.",
+    "flows": [
+      {
+        "flow_id": "FLOW_001",
+        "flow_name": "External Customer Import",
+        "direction": "INBOUND_TO_DB",
+        "data_source": {"type": "EXTERNAL_API", "description": "Partner system sends data via webhook (plaintext)"},
+        "data_sink": {"type": "DB", "description": "INSERT into external_customer table"},
+        "path": "Partner → WebhookController → ExternalCustomerService.saveFromPartner() → DAO → DB",
+        "sensitive_columns": ["cust_nm", "birth_dt"]
+      }
+    ]
+  },
+  "modification_instructions": [
+    {
+      "flow_id": "FLOW_001",
+      "file_name": "ExternalCustomerService.java",
+      "target_method": "saveFromPartner",
+      "action": "ENCRYPT",
+      "reason": "FLOW_001: External API data is plaintext, must encrypt before DB storage",
+      "target_properties": ["custNm", "birthDt"],
+      "insertion_point": "Right before externalCustomerDao.insert() call",
+      "code_pattern_hint": "customerData.setCustNm(ksignUtil.ksignEnc(\"P017\", customerData.getCustNm()));\ncustomerData.setBirthDt(ksignUtil.ksignEnc(\"P018\", customerData.getBirthDt()));"
+    }
+  ]
+}
+```
+
+---
+
+### Example: SELECT with WHERE on sensitive column + DECRYPT result
+
+**Scenario:**
+- SQL: `SELECT id, cust_nm, birth_dt FROM customer WHERE cust_nm = #{custNm}`
+- Method chain: `SearchController.search()` → `CustomerService.searchByName()` → `CustomerDao.selectByName()`
+- Note: WHERE clause uses encrypted column, results need decryption
+
+**Key Point:** Must ENCRYPT search parameter first (to match encrypted DB data), then DECRYPT results.
+
+**mapping_info shows:**
+```json
+{
+  "input_mapping": {
+    "type_category": "MAP",
+    "class_name": "HashMap",
+    "encryption_fields": [
+      {"column_name": "cust_nm", "java_field": "custNm"}
+    ]
+  },
+  "output_mapping": {
+    "type_category": "VO",
+    "class_name": "Customer",
+    "encryption_fields": [
+      {"column_name": "cust_nm", "java_field": "custNm", "getter": "getCustNm", "setter": "setCustNm"},
+      {"column_name": "birth_dt", "java_field": "birthDt", "getter": "getBirthDt", "setter": "setBirthDt"}
+    ]
+  }
+}
+```
+
+**Output:**
+```json
+{
+  "data_flow_analysis": {
+    "overview": "Search by name requires encrypting the search parameter to match encrypted DB data, then decrypting results for display.",
+    "flows": [
+      {
+        "flow_id": "FLOW_001",
+        "flow_name": "Customer Search with Encrypted WHERE",
+        "direction": "BIDIRECTIONAL",
+        "INBOUND_TO_DB": {
+          "data_source": {"type": "HTTP_REQUEST", "description": "Search parameter (name) from user input"},
+          "data_sink": {"type": "DB", "description": "Query executes against encrypted DB data"}
+        },
+        "DB_TO_OUTBOUND": {
+          "data_source": {"type": "DB", "description": "Encrypted results from database"},
+          "data_sink": {"type": "HTTP_RESPONSE", "description": "Decrypted results returned to client"}
+        },
+        "path": "SearchController → CustomerService.searchByName() → DAO → DB → Service → Controller → Client",
+        "sensitive_columns": ["cust_nm", "birth_dt"]
+      }
+    ]
+  },
+  "modification_instructions": [
+    {
+      "flow_id": "FLOW_001",
+      "file_name": "CustomerService.java",
+      "target_method": "searchByName",
+      "action": "ENCRYPT_THEN_DECRYPT",
+      "reason": "FLOW_001: BIDIRECTIONAL - search param needs ENCRYPT, results need DECRYPT",
+      "target_properties": ["custNm", "birthDt"],
+      "insertion_point": "ENCRYPT: Before customerDao.selectByName() call; DECRYPT: After DAO return",
+      "code_pattern_hint": "// Before DAO call: encrypt search parameter\nsearchParam.put(\"custNm\", ksignUtil.ksignEnc(\"P017\", (String)searchParam.get(\"custNm\")));\nList<Customer> resultList = customerDao.selectByName(searchParam);\n// After DAO call: decrypt results\nfor (Customer c : resultList) {\n    c.setCustNm(ksignUtil.ksignDec(\"P017\", c.getCustNm()));\n    c.setBirthDt(ksignUtil.ksignDec(\"P018\", c.getBirthDt()));\n}"
+    }
+  ]
+}
+```
+
+---
+
+### Example: UPDATE with WHERE on sensitive column
+
+**Scenario:**
+- SQL: `UPDATE customer SET birth_dt = #{newBirthDt} WHERE cust_nm = #{custNm}`
+- Method chain: `CustomerController.updateBirthDt()` → `CustomerService.updateBirthDtByName()` → `CustomerDao.updateBirthDtByName()`
+
+**Key Point:** Both WHERE condition (cust_nm) and SET value (birth_dt) must be ENCRYPTED.
+
+**mapping_info shows:**
+```json
+{
+  "input_mapping": {
+    "type_category": "MAP",
+    "class_name": "HashMap",
+    "encryption_fields": [
+      {"column_name": "cust_nm", "java_field": "custNm"},
+      {"column_name": "birth_dt", "java_field": "newBirthDt"}
+    ]
+  }
+}
+```
+
+**Output:**
+```json
+{
+  "data_flow_analysis": {
+    "overview": "Update customer birthdate by name. Both the WHERE condition and SET value are sensitive columns requiring encryption.",
+    "flows": [
+      {
+        "flow_id": "FLOW_001",
+        "flow_name": "Update BirthDt by Name",
+        "direction": "INBOUND_TO_DB",
+        "data_source": {"type": "HTTP_REQUEST", "description": "Client sends name (search) and newBirthDt (update value)"},
+        "data_sink": {"type": "DB", "description": "UPDATE customer table"},
+        "path": "CustomerController → CustomerService.updateBirthDtByName() → DAO → DB",
+        "sensitive_columns": ["cust_nm", "birth_dt"]
+      }
+    ]
+  },
+  "modification_instructions": [
+    {
+      "flow_id": "FLOW_001",
+      "file_name": "CustomerService.java",
+      "target_method": "updateBirthDtByName",
+      "action": "ENCRYPT",
+      "reason": "FLOW_001: UPDATE command - both WHERE (custNm) and SET (newBirthDt) need encryption",
+      "target_properties": ["custNm", "newBirthDt"],
+      "insertion_point": "Right before customerDao.updateBirthDtByName() call",
+      "code_pattern_hint": "// Encrypt both search param and update value\nupdateParams.put(\"custNm\", ksignUtil.ksignEnc(\"P017\", (String)updateParams.get(\"custNm\")));\nupdateParams.put(\"newBirthDt\", ksignUtil.ksignEnc(\"P018\", (String)updateParams.get(\"newBirthDt\")));"
     }
   ]
 }
@@ -308,14 +838,13 @@ When a SELECT query has a WHERE clause that references sensitive columns (name, 
 ## Start Analysis Now
 
 Based on the information above:
-1. **For each call chain in call_stacks**, analyze the data flow using:
-   - `vo_info.vo_mappings` for field details (getter, setter, policy_id)
-   - `vo_info.sql_column_usage` for SQL query information (query_id, query_type)
-2. **Output modification instructions** for each flow in JSON format
-3. **SKIP** flows that don't involve the target table's encryption columns
 
-**Important**:
-- Use vo_info field mappings to generate accurate getter/setter calls in `code_pattern_hint`
-- Match call chain methods with sql_column_usage via query_id to determine crypto action
+1. **For each call chain in call_stacks**, find the matching query in mapping_info
+2. **Use `command_type`** and mapping location to determine ENCRYPT/DECRYPT action
+3. **Use `java_field`, `getter`, `setter`** from encryption_fields to generate accurate code patterns
+4. **Output modification instructions** for each flow in JSON format
+5. **SKIP** flows that don't involve the target table's encryption columns
 
 **Remember**: Focus on the target table. Only include modification instructions for operations that interact with the target table.
+
+**REMINDER: Output ONLY the JSON object. Start directly with `{` and end with `}`. No other text allowed.**
