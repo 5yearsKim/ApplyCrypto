@@ -18,6 +18,7 @@ Follow the **modification instructions below exactly** to generate a **Unified D
 5. **No code omission**: Code within the diff hunks must be exact.
 6. **For SKIP action**: If action is "SKIP", output empty MODIFIED_CODE section.
 7. **Use FILE INDEX**: Output must use the exact file index (FILE_1, FILE_2, etc.) as shown in the source files section.
+8. **NEVER modify context lines**: NEVER, NEVER, NEVER modify the context lines (the code snippets surrounding the `+` or `-` lines). Do NOT remove comments, trailing spaces, or newlines. `diff` relies on exact matches of these surrounding lines to apply patches.
 
 ---
 

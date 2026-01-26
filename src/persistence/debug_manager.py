@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from models.modification_plan import ModificationPlan
+from config.config_manager import Configuration
 
 class DebugManager:
     """
@@ -22,25 +23,24 @@ class DebugManager:
     2. 디버그 로그 관리
     """
     
-    def __init__(self, target_project: Path, generate_type: str = "diff"):
+    def __init__(self, config: Configuration):
         """
         DebugManager 초기화
         
         Args:
-            target_project: 대상 프로젝트 경로
-            generate_type: 코드 생성 방식 ("full_source", "diff", "part")
+            config: 설정 객체
         """
-        self.target_project = Path(target_project)
-        self.generate_type = generate_type
+        self.config = config
+        self.target_project = Path(config.target_project)
+        self.generate_type = getattr(config, "generate_type", "diff")
         self.debug_dir = self.target_project / ".applycrypto" / "debug"
         self.diff_dir = self.debug_dir / "diffs"
         self.contexts_dir = self.debug_dir / "contexts"
         self.plans_dir = self.debug_dir / "plans"
+        self.patch_dir = self.debug_dir / "patch"
         self.logger = logging.getLogger(__name__)
         
-        self._initialize_debug_directory()
-        
-    def _initialize_debug_directory(self) -> None:
+    def initialize_debug_directory(self) -> None:
         """디버그 디렉터리를 초기화(삭제 후 생성)"""
         try:
             if self.debug_dir.exists():
@@ -48,8 +48,35 @@ class DebugManager:
             self.diff_dir.mkdir(parents=True, exist_ok=True)
             self.contexts_dir.mkdir(parents=True, exist_ok=True)
             self.plans_dir.mkdir(parents=True, exist_ok=True)
+            self.patch_dir.mkdir(parents=True, exist_ok=True)
         except (OSError, PermissionError) as e:
             self.logger.error(f"디버그 디렉터리를 생성할 수 없습니다: {self.diff_dir} - {e}")
+
+    def log_rejected_hunk(self, filename: str, hunk_detail: str, reason: str) -> None:
+        """
+        거부된 Hunk 정보를 파일로 저장 (파일명별로 append)
+        
+        Args:
+            filename: 대상 파일명
+            hunk_detail: Hunk 상세 내용
+            reason: 거부 사유
+        """
+        try:
+            # 파일명 생성: filename.rejected.txt
+            save_path = self.patch_dir / f"{filename}.rejected.txt"
+            
+            # 구분선 및 내용
+            separator = "=" * 50
+            content = f"\n{separator}\nReason: {reason}\n{separator}\n{hunk_detail}\n"
+            
+            # append 모드로 저장
+            with open(save_path, "a", encoding="utf-8") as f:
+                f.write(content)
+                
+            self.logger.debug(f"Rejected hunk appended to: {save_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to append rejected hunk: {e}")
 
     def log_diff(self, backup_path: Optional[str], file_path: str) -> None:
         """
@@ -204,7 +231,7 @@ class DebugManager:
                         file_path = plan.get('file_path')
                         modified_code = plan.get('modified_code')
 
-                    f.write(f"====file: {file_path} ====\n\n")
+                    f.write(f"====file: \"{file_path}\" ====\n\n")
                     if modified_code:
                         f.write(str(modified_code))
                     f.write("\n\n")

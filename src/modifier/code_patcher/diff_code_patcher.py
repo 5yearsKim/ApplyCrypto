@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from config.config_manager import Configuration
+from persistence.debug_manager import DebugManager
 from .base_code_patcher import BaseCodePatcher
 from .diff_utils import FileDiff, LineType, UnifiedDiffHunk, parse_diff
 
@@ -13,6 +15,15 @@ class DiffCodePatcher(BaseCodePatcher):
     """
     Code patcher that applies Unified Diff patches.
     """
+
+    def __init__(self, project_root: Optional[Path] = None, config: Optional[Configuration] = None):
+        super().__init__(project_root, config)
+        if config:
+            self.debug_manager = DebugManager(config)
+            # Do NOT call initialize_debug_directory here as it wipes the directory.
+            # It is expected to be initialized by the CLI controller.
+        else:
+            self.debug_manager = None
 
     def apply_patch(
         self, file_path: Path, modified_code: str, dry_run: bool = False
@@ -95,6 +106,13 @@ class DiffCodePatcher(BaseCodePatcher):
                     original_lines, hunk, current_original_idx
                 )
                 if result is None:
+                    if self.debug_manager:
+                        hunk_str = self._format_hunk(hunk)
+                        self.debug_manager.log_rejected_hunk(
+                            filename=file_path.name,
+                            hunk_detail=hunk_str,
+                            reason=f"Context not found for hunk at old_line={hunk.old_start}"
+                        )
                     continue
                 match_idx, match_len, skipped_map = result
                 
@@ -234,3 +252,20 @@ class DiffCodePatcher(BaseCodePatcher):
         if s.startswith("#"): return True
         if s.startswith("/*") or s.startswith("*"): return True # Javadoc style
         return False
+
+    def _format_hunk(self, hunk: UnifiedDiffHunk) -> str:
+        """
+        Reconstruct hunk string for logging.
+        """
+        lines = []
+        # Header
+        header = f"@@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@"
+        if hunk.section_header:
+            header += f" {hunk.section_header}"
+        lines.append(header)
+        
+        for line in hunk.lines:
+            prefix = line.type.value
+            lines.append(f"{prefix}{line.content}")
+            
+        return "\n".join(lines)

@@ -1217,8 +1217,11 @@ class CLIController:
             self.logger.info(f"파일 수정을 시작합니다 (모드: {mode})...")
 
             # Debug Manager 초기화
-            generate_type = getattr(config, "generate_type", "diff")
-            debug_manager = DebugManager(target_project, generate_type=generate_type) if args.debug else None
+            if args.debug:
+                debug_manager = DebugManager(config)
+                debug_manager.initialize_debug_directory()
+            else:
+                debug_manager = None
 
             # 분석 결과 확인 및 로드
             self.logger.info("  [1/2] 분석 결과 확인 중...")
