@@ -430,15 +430,34 @@ class BaseMultiStepCodeGenerator(BaseCodeGenerator):
 
     # ========== 파일 읽기 유틸리티 ==========
 
-    def _read_file_contents(self, file_paths: List[str]) -> str:
-        """파일들의 내용을 읽어서 문자열로 반환합니다."""
+    def _read_file_contents(self, file_paths: List[str], add_line_num: bool = False) -> str:
+        """
+        파일들의 내용을 읽어서 문자열로 반환합니다.
+
+        Args:
+            file_paths: 파일 경로 리스트
+            add_line_num: 줄 번호 추가 여부
+
+        Returns:
+            str: 파일 내용 문자열 (=== File: ... === 포함)
+        """
         snippets = []
         for file_path in file_paths:
             try:
                 path_obj = Path(file_path)
                 if path_obj.exists():
                     with open(path_obj, "r", encoding="utf-8") as f:
-                        content = f.read()
+                        lines = f.readlines()
+
+                    if add_line_num:
+                        numbered_lines = [
+                            f"{idx}|{line.rstrip()}"
+                            for idx, line in enumerate(lines, start=1)
+                        ]
+                        content = "\n".join(numbered_lines)
+                    else:
+                        content = "".join(lines)
+
                     snippets.append(f"=== File: {path_obj.name} ===\n{content}")
                 else:
                     logger.warning(f"File not found: {file_path}")
@@ -447,13 +466,14 @@ class BaseMultiStepCodeGenerator(BaseCodeGenerator):
         return "\n\n".join(snippets)
 
     def _read_file_contents_indexed(
-        self, file_paths: List[str]
+        self, file_paths: List[str], add_line_num: bool = False
     ) -> Tuple[str, Dict[int, str], Dict[str, str]]:
         """
         파일들의 내용을 인덱스와 함께 읽어서 반환합니다.
 
         Args:
             file_paths: 파일 경로 리스트
+            add_line_num: 줄 번호 추가 여부
 
         Returns:
             Tuple[str, Dict[int, str], Dict[str, str]]:
@@ -470,14 +490,30 @@ class BaseMultiStepCodeGenerator(BaseCodeGenerator):
                 path_obj = Path(file_path)
                 if path_obj.exists():
                     with open(path_obj, "r", encoding="utf-8") as f:
-                        content = f.read()
+                        lines = f.readlines()
+
+                    if add_line_num:
+                        numbered_lines = [
+                            f"{idx}|{line.rstrip()}"
+                            for idx, line in enumerate(lines, start=1)
+                        ]
+                        content = "\n".join(numbered_lines)
+                    else:
+                        content = "".join(lines)
+
                     # 인덱스 형식으로 파일 헤더 생성
                     snippets.append(
                         f"[FILE_{idx}] {path_obj.name}\n"
                         f"=== Content ===\n{content}"
                     )
                     index_to_path[idx] = file_path
-                    path_to_content[file_path] = content
+                    # 시그니처 매칭용으로는 원본 내용(줄번호 없는 것)을 사용해야 함
+                    # 따라서 줄번호가 있더라도 원본 내용을 따로 저장해야 할 수 있음.
+                    # 하지만 path_to_content는 _match_by_code_signature에서 사용됨.
+                    # 거기서는 content를 파싱해서 시그니처를 찾음.
+                    # 줄번호가 있으면 파싱이 어려울 수 있음.
+                    # 그래서 path_to_content에는 항상 raw content를 저장하는 것이 안전함.
+                    path_to_content[file_path] = "".join(lines)
                 else:
                     logger.warning(f"File not found: {file_path}")
             except Exception as e:
@@ -987,9 +1023,14 @@ class BaseMultiStepCodeGenerator(BaseCodeGenerator):
                 - 파일명 -> 파일 경로 매핑
                 - 파일 경로 -> 파일 내용 매핑
         """
+        add_line_num = self.config and self.config.generate_type != 'full_source'
+
         # 소스 파일 내용 (인덱스 형식)
         source_files_str, index_to_path, path_to_content = (
-            self._read_file_contents_indexed(modification_context.file_paths)
+            self._read_file_contents_indexed(
+                modification_context.file_paths,
+                add_line_num=add_line_num
+            )
         )
 
         # 파일명 -> 파일 경로 매핑 생성
