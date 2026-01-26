@@ -2,8 +2,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
-
-
 @dataclass
 class CodeGeneratorOutput:
     content: str
@@ -31,6 +29,11 @@ class CodeGeneratorInput:
     extra_variables: Dict[str, Any] = None
     """기타 템플릿 변수"""
 
+    context_files: List[str] = None
+    """참조용 파일 경로 (VO 등) - 수정 대상이 아닌 컨텍스트 파일"""
+
     def __post_init__(self):
         if self.extra_variables is None:
             self.extra_variables = {}
+        if self.context_files is None:
+            self.context_files = []

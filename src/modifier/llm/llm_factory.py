@@ -23,13 +23,16 @@ class LLMProviderError(Exception):
     pass
 
 
-def create_llm_provider(provider_name: str) -> LLMProvider:
+def create_llm_provider(
+    provider_name: str, model_id: str = None
+) -> LLMProvider:
     """
     설정에 따라 적절한 LLM 프로바이더를 생성합니다.
     필요한 credential 정보는 환경변수에서 가져옵니다.
 
     Args:
         provider_name: 프로바이더 이름 ("watsonx_ai", "openai", "claude_ai", "mock")
+        model_id: 사용할 모델 ID (선택적, 지정하지 않으면 환경변수에서 가져옴)
 
     Returns:
         LLMProvider: 생성된 LLM 프로바이더 인스턴스
@@ -44,7 +47,8 @@ def create_llm_provider(provider_name: str) -> LLMProvider:
         api_key = os.getenv("WATSONX_API_KEY")
         api_url = os.getenv("WATSONX_API_URL")
         project_id = os.getenv("WATSONX_PROJECT_ID")
-        model_id = os.getenv("WATSONX_MODEL_ID")
+        # model_id 파라미터가 있으면 사용, 없으면 환경변수에서 가져옴
+        model_id = model_id or os.getenv("WATSONX_MODEL_ID")
 
         if not api_key:
             raise LLMProviderError(
@@ -64,7 +68,8 @@ def create_llm_provider(provider_name: str) -> LLMProvider:
             "WATSONX_ON_PREMISE_API_URL", "https://cpd-zen.apps.wca.samsunglife.kr"
         )
         project_id = os.getenv("WATSONX_ON_PREMISE_PROJECT_ID")
-        model_id = os.getenv(
+        # model_id 파라미터가 있으면 사용, 없으면 환경변수에서 가져옴
+        model_id = model_id or os.getenv(
             "WATSONX_ON_PREMISE_MODEL_ID", "ibm/granite-3-3-8b-instruct"
         )
         user_name = os.getenv("WATSONX_ON_PREMISE_USER_NAME")
@@ -82,7 +87,8 @@ def create_llm_provider(provider_name: str) -> LLMProvider:
     elif provider_name_lower == "openai":
         # 환경변수에서 credential 정보 가져오기
         api_key = os.getenv("OPENAI_API_KEY")
-        model_id = os.getenv("OPENAI_MODEL_ID")
+        # model_id 파라미터가 있으면 사용, 없으면 환경변수에서 가져옴
+        model_id = model_id or os.getenv("OPENAI_MODEL_ID")
 
         if not api_key:
             raise LLMProviderError(
@@ -94,7 +100,8 @@ def create_llm_provider(provider_name: str) -> LLMProvider:
     elif provider_name_lower == "claude_ai":
         # 환경변수에서 credential 정보 가져오기
         api_key = os.getenv("ANTHROPIC_API_KEY")
-        model_id = os.getenv("ANTHROPIC_MODEL_ID", "claude-sonnet-4-20250514")
+        # model_id 파라미터가 있으면 사용, 없으면 환경변수에서 가져옴
+        model_id = model_id or os.getenv("ANTHROPIC_MODEL_ID", "claude-sonnet-4-20250514")
 
         if not api_key:
             raise LLMProviderError(

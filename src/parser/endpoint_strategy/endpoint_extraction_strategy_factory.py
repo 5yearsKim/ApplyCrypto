@@ -58,6 +58,11 @@ class EndpointExtractionStrategyFactory:
                 f"framework_type '{framework_type}'는 아직 구현되지 않았습니다."
             )
 
+        elif framework_type == "AnyframeCCS":
+            from .anyframe_ccs_endpoint_extraction import AnyframeCCSEndpointExtraction
+
+            return AnyframeCCSEndpointExtraction(java_parser=java_parser, cache_manager=cache_manager)
+
         elif framework_type == "SpringBatQrts":
             # TODO: 추후 구현
             raise NotImplementedError(
@@ -76,10 +81,20 @@ class EndpointExtractionStrategyFactory:
                 f"framework_type '{framework_type}'는 아직 구현되지 않았습니다."
             )
 
+        elif framework_type == "anyframe_ccs_batch":
+            from .anyframe_ccs_batch_endpoint_extraction import (
+                AnyframeCCSBatchEndpointExtraction,
+            )
+
+            return AnyframeCCSBatchEndpointExtraction(
+                java_parser=java_parser, cache_manager=cache_manager
+            )
+
         else:
             raise ValueError(
                 f"지원하지 않는 framework_type: {framework_type}. "
                 f"가능한 값: SpringMVC, AnyframeSarangOn, AnyframeOld, AnyframeEtc, "
-                f"SpringBatQrts, AnyframeBatSarangOn, AnyframeBatEtc"
+                f"AnyframeCCS, SpringBatQrts, AnyframeBatSarangOn, AnyframeBatEtc, "
+                f"anyframe_ccs_batch"
             )
 

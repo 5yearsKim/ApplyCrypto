@@ -162,13 +162,14 @@ class BaseCodeGenerator(ABC):
         source_files_str = "\n\n".join(snippets)
 
 
-
         # 배치 프롬프트 생성
         batch_variables = {
             "table_info": input_data.table_info,
             "layer_name": input_data.layer_name,
             "source_files": source_files_str,
             "file_count": len(input_data.file_paths),
+            "context_files": context_files_str,
+            "context_file_count": len(input_data.context_files),
             **(input_data.extra_variables or {}),
         }
 
@@ -212,16 +213,18 @@ class BaseCodeGenerator(ABC):
 
             if not content:
                 raise Exception("LLM응답에 content가 없습니다.")
-            
+
             content = content.strip()
 
             return self._parse_delimited_format(content, file_mapping)
-             
+
         except Exception as e:
             logger.error(f"LLM 응답 파싱 실패: {e}")
             raise Exception(f"LLM 응답 파싱 실패: {e}")
 
-    def _parse_delimited_format(self, content:str, file_mapping: Dict[str, str]) -> List[Dict[str, Any]]:
+    def _parse_delimited_format(
+        self, content: str, file_mapping: Dict[str, str]
+    ) -> List[Dict[str, Any]]:
         """
         구분자 기반 형식의 LLM 응답을 파싱합니다.
 
@@ -277,11 +280,13 @@ class BaseCodeGenerator(ABC):
                         f"파일 매핑에서 찾을 수 없음: {file_name}. 원본 값 사용."
                     )
 
-                modifications.append({
-                    "file_path": file_path,
-                    "reason": reason.strip(),
-                    "modified_code": modified_code.strip(),
-                })
+                modifications.append(
+                    {
+                        "file_path": file_path,
+                        "reason": reason.strip(),
+                        "modified_code": modified_code.strip(),
+                    }
+                )
 
             except Exception as e:
                 logger.warning(f"블록 파싱 중 오류 (건너뜀): {e}")
@@ -292,7 +297,9 @@ class BaseCodeGenerator(ABC):
                 "구분자 형식 파싱 실패: 유효한 수정 블록을 찾을 수 없습니다."
             )
 
-        logger.info(f"{len(modifications)}개 파일 수정 정보를 파싱했습니다 (구분자 형식).")
+        logger.info(
+            f"{len(modifications)}개 파일 수정 정보를 파싱했습니다 (구분자 형식)."
+        )
         return modifications
 
     def _extract_section(
@@ -337,7 +344,9 @@ class BaseCodeGenerator(ABC):
 
     @abstractmethod
     def generate_modification_plan(
-        self, modification_context: ModificationContext, table_access_info: Optional[TableAccessInfo] = None
+        self,
+        modification_context: ModificationContext,
+        table_access_info: Optional[TableAccessInfo] = None,
     ) -> List[ModificationPlan]:
         """
         수정 계획을 생성합니다 (단일 컨텍스트).
@@ -404,6 +413,85 @@ class BaseCodeGenerator(ABC):
         # JSON 문자열로 변환
         return json.dumps(call_stacks_list, indent=2, ensure_ascii=False)
 
+    def _get_sql_queries_for_prompt(
+        self, table_access_info: TableAccessInfo, file_paths: List[str] = None
+    ) -> str:
+        """
+        Planning LLM에 전달할 SQL 쿼리 정보를 포맷팅합니다.
+
+        Args:
+            table_access_info: 테이블 접근 정보
+            file_paths: 파일 경로 리스트 (지정 시 관련 SQL만 필터링)
+
+        Returns:
+            str: JSON 형식의 SQL 쿼리 정보 문자열
+        """
+        relevant_queries = []
+
+        # 파일 경로에서 클래스명 추출 (필터링용)
+        file_class_names = set()
+        if file_paths:
+            for file_path in file_paths:
+                class_name = Path(file_path).stem
+                file_class_names.add(class_name)
+
+        for sql_query in table_access_info.sql_queries:
+            # 파일 경로가 지정된 경우 관련 SQL만 필터링
+            if file_paths and file_class_names:
+                call_stacks = sql_query.get("call_stacks", [])
+                is_relevant = False
+
+                for call_stack in call_stacks:
+                    if not isinstance(call_stack, list):
+                        continue
+                    for method_sig in call_stack:
+                        if not isinstance(method_sig, str):
+                            continue
+                        # method_signature에서 클래스명 추출
+                        if "." in method_sig:
+                            method_class_name = method_sig.split(".")[0]
+                        else:
+                            method_class_name = method_sig
+                        if method_class_name in file_class_names:
+                            is_relevant = True
+                            break
+                    if is_relevant:
+                        break
+
+                if not is_relevant:
+                    continue
+
+            # SQL 쿼리 정보 추출
+            strategy_specific = sql_query.get("strategy_specific", {})
+            strategy_str = ""
+            if strategy_specific:
+                parts = []
+                if "parameter_type" in strategy_specific:
+                    parts.append(
+                        f"Parameter Type: {strategy_specific['parameter_type']}"
+                    )
+                if "result_type" in strategy_specific:
+                    parts.append(f"Result Type: {strategy_specific['result_type']}")
+                if "result_map" in strategy_specific:
+                    parts.append(f"Result Map: {strategy_specific['result_map']}")
+                if "namespace" in strategy_specific:
+                    parts.append(f"Namespace: {strategy_specific['namespace']}")
+                strategy_str = ", ".join(parts)
+
+            relevant_queries.append(
+                {
+                    "id": sql_query.get("id"),
+                    "query_type": sql_query.get("query_type"),
+                    "sql": sql_query.get("sql"),
+                    "call_stacks": sql_query.get("call_stacks", []),
+                    "source_file": sql_query.get("source_file_path"),
+                    "strategy_specific": strategy_specific,
+                    "strategy_description": strategy_str,
+                }
+            )
+
+        return json.dumps(relevant_queries, indent=2, ensure_ascii=False)
+
     def _get_cache_key(self, prompt: str) -> str:
         """프롬프트의 캐시 키를 생성합니다."""
         return hashlib.md5(prompt.encode("utf-8")).hexdigest()
@@ -411,4 +499,3 @@ class BaseCodeGenerator(ABC):
     def clear_cache(self):
         """캐시를 비웁니다."""
         self._prompt_cache.clear()
-

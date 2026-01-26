@@ -1,11 +1,10 @@
 {
-  "target_project": "C:\\Users\\swth1\\src\\book-ssm",
-  "source_file_types": [
-    ".java",
-    ".xml"
-  ],
+  "_comment": "=== ApplyCrypto Configuration Example ===",
+  "_usage": "Copy this file to config.json and modify according to your project",
+
+  "target_project": "/path/to/your/java/project",
+  "source_file_types": [".java", ".xml"],
   "sql_wrapping_type": "mybatis",
-  "modification_type": "ControllerOrService",
   "framework_type": "SpringMVC",
   "llm_provider": "watsonx_ai",
   "generate_type": "full_source",
@@ -13,37 +12,162 @@
     {
       "table_name": "tb_employee",
       "columns": [
-        {
-          "name": "day_of_birth",
-          "new_column": false
-        },
-        {
-          "name": "sex",
-          "new_column": false
-        },
-        {
-          "name": "last_name",
-          "new_column": false
-        },
-        {
-          "name": "jumin_number",
-          "new_column": false
-        }
+        { "name": "emp_nm", "new_column": false, "column_type": "name", "encryption_code": "P017" },
+        { "name": "birth_dt", "new_column": false, "column_type": "dob", "encryption_code": "P018" },
+        { "name": "jumin_no", "new_column": false, "column_type": "rrn", "encryption_code": "P019" }
       ]
     }
   ],
-  "exclude_dirs": [
-    "test",
-    "generated",
-    "src/test"
-  ],
+
+  "_comment_column_fields": "=== Column Field Options ===",
+  "_column_fields": {
+    "name": "Column name in database (required)",
+    "new_column": "Whether this is a newly added encryption column (optional, default: false)",
+    "column_type": "Type of sensitive data: 'name', 'dob', 'rrn', 'sex' (optional but recommended for non-standard column names)",
+    "encryption_code": "Direct policy ID to use: 'P017' (name), 'P018' (dob), 'P019' (rrn) (optional, highest priority)"
+  },
+  "_column_type_mapping": {
+    "name": "이름 필드 → P017",
+    "dob": "생년월일 필드 → P018",
+    "rrn": "주민등록번호 필드 → P019",
+    "sex": "성별 필드 (별도 처리)"
+  },
+
+  "exclude_dirs": ["test", "generated", "src/test"],
   "exclude_files": [
-    "*Test.java",
-    "*_test.java",
-    "*Test*.java",
-    "log4j.xml",
-    "ehcache.xml",
-    "mybatis-config.xml",
-    "spring-servlet.xml"
+    "*Test.java", "*_test.java", "*Test*.java",
+    "log4j.xml", "ehcache.xml", "mybatis-config.xml", "spring-servlet.xml"
+  ],
+
+  "_comment_modification_types": "=== Modification Type Options ===",
+  "_modification_types": [
+    "ControllerOrService - Single-step LLM code generation",
+    "ServiceImplOrBiz - Single-step for ServiceImpl/Biz layer",
+    "TypeHandler - MyBatis TypeHandler approach",
+    "TwoStep - Two-phase: Planning -> Execution",
+    "ThreeStep - Three-phase: Query Analysis -> Planning -> Execution"
+  ],
+
+  "modification_type": "TwoStep",
+
+  "_comment_twostep": "=== TwoStep Configuration ===",
+  "_twostep_modes": {
+    "full": "Run Planning + Execution (default)",
+    "plan_only": "Run Planning only, save results for later execution",
+    "execution_only": "Run Execution using previous planning results"
+  },
+
+  "two_step_config": {
+    "planning_provider": "watsonx_ai",
+    "planning_model": "ibm/granite-3-8b-instruct",
+    "execution_provider": "watsonx_ai",
+    "execution_model": "mistralai/codestral-2505",
+    "execution_options": {
+      "_comment": "Optional: Set mode and plan_timestamp",
+      "_mode_options": ["full", "plan_only", "execution_only"],
+      "mode": "full"
+    }
+  },
+
+  "_twostep_plan_only_example": {
+    "_description": "Planning only - results saved to .applycrypto/two_step_results/{timestamp}/",
+    "two_step_config": {
+      "planning_provider": "watsonx_ai",
+      "planning_model": "ibm/granite-3-8b-instruct",
+      "execution_provider": "watsonx_ai",
+      "execution_model": "mistralai/codestral-2505",
+      "execution_options": {
+        "mode": "plan_only"
+      }
+    }
+  },
+
+  "_twostep_execution_only_example": {
+    "_description": "Execution only - uses previous planning results",
+    "two_step_config": {
+      "planning_provider": "watsonx_ai",
+      "planning_model": "ibm/granite-3-8b-instruct",
+      "execution_provider": "watsonx_ai",
+      "execution_model": "mistralai/codestral-2505",
+      "execution_options": {
+        "mode": "execution_only",
+        "plan_timestamp": "20250123_143052"
+      }
+    }
+  },
+
+  "_comment_threestep": "=== ThreeStep Configuration ===",
+  "_threestep_modes": {
+    "full": "Run Query Analysis + Planning + Execution (default)",
+    "plan_only": "Run Query Analysis + Planning only",
+    "execution_only": "Run Execution using previous analysis/planning results"
+  },
+
+  "_threestep_config_example": {
+    "_description": "ThreeStep full example",
+    "modification_type": "ThreeStep",
+    "three_step_config": {
+      "analysis_provider": "watsonx_ai",
+      "analysis_model": "ibm/granite-3-8b-instruct",
+      "execution_provider": "watsonx_ai",
+      "execution_model": "mistralai/codestral-2505",
+      "execution_options": {
+        "mode": "full"
+      }
+    }
+  },
+
+  "_threestep_plan_only_example": {
+    "_description": "Query Analysis + Planning only - results saved to .applycrypto/three_step_results/{timestamp}/",
+    "modification_type": "ThreeStep",
+    "three_step_config": {
+      "analysis_provider": "watsonx_ai",
+      "analysis_model": "ibm/granite-3-8b-instruct",
+      "execution_provider": "watsonx_ai",
+      "execution_model": "mistralai/codestral-2505",
+      "execution_options": {
+        "mode": "plan_only"
+      }
+    }
+  },
+
+  "_threestep_execution_only_example": {
+    "_description": "Execution only using previous results",
+    "modification_type": "ThreeStep",
+    "three_step_config": {
+      "analysis_provider": "watsonx_ai",
+      "analysis_model": "ibm/granite-3-8b-instruct",
+      "execution_provider": "watsonx_ai",
+      "execution_model": "mistralai/codestral-2505",
+      "execution_options": {
+        "mode": "execution_only",
+        "plan_timestamp": "20250123_143052"
+      }
+    }
+  },
+
+  "_comment_providers": "=== LLM Provider Options ===",
+  "_llm_providers": [
+    "watsonx_ai - IBM WatsonX AI (cloud)",
+    "watsonx_ai_on_prem - IBM WatsonX AI (on-premise)",
+    "claude_ai - Anthropic Claude",
+    "openai - OpenAI GPT",
+    "mock - Mock provider for testing"
+  ],
+
+  "_comment_framework_types": "=== Framework Type Options ===",
+  "_framework_types": [
+    "SpringMVC", "AnyframeSarangOn", "AnyframeOld", "AnyframeEtc",
+    "AnyframeCCS", "anyframe_ccs_batch",
+    "SpringBatQrts", "AnyframeBatSarangOn", "AnyframeBatEtc"
+  ],
+
+  "_comment_sql_wrapping_types": "=== SQL Wrapping Type Options ===",
+  "_sql_wrapping_types": [
+    "mybatis - Standard MyBatis XML mappers",
+    "mybatis_ccs - CCS-specific MyBatis (ctl/svcimpl/dqm layers)",
+    "mybatis_ccs_batch - CCS Batch MyBatis (*BAT_SQL.xml)",
+    "jdbc - Plain JDBC with PreparedStatement",
+    "jpa - JPA/Hibernate"
   ]
 }

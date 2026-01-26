@@ -78,3 +78,5 @@ change_*.diff
 migration_log.txt
 
 prompt_temp
+prompt_temp.md
+.claude/

@@ -48,6 +48,7 @@ class BaseContextGenerator(ABC):
         table_name: str,
         columns: List[Dict],
         layer: str = "",
+        context_files: List[str] = None,
     ) -> List[ModificationContext]:
         """
         Splits file list into batches based on token size.
@@ -57,10 +58,13 @@ class BaseContextGenerator(ABC):
             table_name: Table name.
             columns: List of columns.
             layer: Layer name.
+            context_files: List of context file paths (VO files, etc.) - not to be modified.
 
         Returns:
             List[ModificationContext]: List of split modification contexts.
         """
+        if context_files is None:
+            context_files = []
         if not file_paths:
             return []
 
@@ -93,9 +97,9 @@ class BaseContextGenerator(ABC):
             try:
                 path_obj = Path(file_path)
                 if not path_obj.exists():
-                     logger.warning(f"File not found during batch creation: {file_path}")
-                     continue
-                
+                    logger.warning(f"File not found during batch creation: {file_path}")
+                    continue
+
                 with open(path_obj, "r", encoding="utf-8") as f:
                     content = f.read()
             except Exception as e:
@@ -103,10 +107,10 @@ class BaseContextGenerator(ABC):
                 continue
 
             # Format snippet and calculate tokens
-            snippet_formatted = (
-                f"=== File Path (Absolute): {file_path} ===\n{content}"
+            snippet_formatted = f"=== File Path (Absolute): {file_path} ===\n{content}"
+            snippet_tokens = self._code_generator.calculate_token_size(
+                snippet_formatted
             )
-            snippet_tokens = self._code_generator.calculate_token_size(snippet_formatted)
 
             # Add separator tokens if not the first snippet
             tokens_to_add = snippet_tokens
@@ -122,6 +126,7 @@ class BaseContextGenerator(ABC):
                         columns=columns,
                         file_count=len(current_paths),
                         layer=layer,
+                        context_files=context_files,
                     )
                 )
                 current_paths = [file_path]
@@ -140,6 +145,7 @@ class BaseContextGenerator(ABC):
                     columns=columns,
                     file_count=len(current_paths),
                     layer=layer,
+                    context_files=context_files,
                 )
             )
 
@@ -147,5 +153,3 @@ class BaseContextGenerator(ABC):
             f"Split {len(file_paths)} files into {len(batches)} batches (ModificationContext)."
         )
         return batches
-
-

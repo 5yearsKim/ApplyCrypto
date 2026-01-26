@@ -147,6 +147,7 @@ Do not generate any other comments, contents, words except for "modifications".
 ## Few-shot Examples
 
 ### Example 1: Service Layer - Save (Encrypt plain data columns)
+<<<<<<< HEAD
 **Output:**
 ```
 ======FILE======
@@ -156,17 +157,31 @@ Encrypt transformation for plain data columns before saving.
 ======MODIFIED_CODE======
 --- a/src/service/UserService.java
 +++ b/src/service/UserService.java
+=======
+**Before:**
+```java
+public void saveUser(User user) {
+    userDao.insert(user);
+}
+```
+**After (Unified Diff):**
+```diff
+>>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
 @@ -1,3 +1,5 @@
  public void saveUser(User user) {
 +    user.setName(k_sign.CryptoService.encrypt(user.getName(), k_sign.CryptoService.P20, K_SIGN_NAME));
 +    user.setDob(k_sign.CryptoService.encrypt(user.getDob(), k_sign.CryptoService.P30, K_SIGN_DOB));
      userDao.insert(user);
  }
+<<<<<<< HEAD
 ======END======
+=======
+>>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
 ```
 **Explanation:** Encrypt transformation for plain data columns before saving.
 
 ### Example 2: Service Layer - Retrieve (Decrypt plain data columns)
+<<<<<<< HEAD
 **Output:**
 ```
 ======FILE======
@@ -176,6 +191,17 @@ Decrypt encrypted plain data columns before returning after retrieval.
 ======MODIFIED_CODE======
 --- a/src/service/UserService.java
 +++ b/src/service/UserService.java
+=======
+**Before:**
+```java
+public User getUserById(Long id) {
+    User user = userDao.findById(id);
+    return user;
+}
+```
+**After (Unified Diff):**
+```diff
+>>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
 @@ -2,4 +2,6 @@
      User user = userDao.findById(id);
 -    return user;
@@ -184,11 +210,15 @@ Decrypt encrypted plain data columns before returning after retrieval.
 +        user.setDob(k_sign.CryptoService.decrypt(user.getDob(), k_sign.CryptoService.P30, K_SIGN_DOB));
 +    }
 +    return user;
+<<<<<<< HEAD
 ======END======
+=======
+>>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
 ```
 **Explanation:** Decrypt encrypted plain data columns before returning after retrieval.
 
 ### Example 3: Service Layer - Save (Encrypt resident number column, change K_SIGN_SSN to K_SIGN_JUMIN)
+<<<<<<< HEAD
 **Output:**
 ```
 ======FILE======
@@ -202,10 +232,25 @@ Change k_sign.CryptoService.P03 to k_sign.CryptoService.P10 and K_SIGN_SSN to K_
 -    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
 +    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), k_sign.CryptoService.P10, K_SIGN_JUMIN));
 ======END======
+=======
+**Before:**
+```java
+public void saveUser(User user) {
+    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
+    userDao.insert(user);
+}
+```
+**After (Unified Diff):**
+```diff
+@@ -2,1 +2,1 @@
+-    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
++    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), k_sign.CryptoService.P10, K_SIGN_JUMIN));
+>>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
 ```
 **Explanation:** Change k_sign.CryptoService.P03 to k_sign.CryptoService.P10 and K_SIGN_SSN to K_SIGN_JUMIN.
 
 ### Example 4: Service Layer - Retrieve (Decrypt resident number column, change K_SIGN_SSN to K_SIGN_JUMIN)
+<<<<<<< HEAD
 **Output:**
 ```
 ======FILE======
@@ -219,6 +264,23 @@ Change k_sign.CryptoService.P03 to k_sign.CryptoService.P10 and K_SIGN_SSN to K_
 -        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
 +        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), k_sign.CryptoService.P10, K_SIGN_JUMIN));
 ======END======
+=======
+**Before:**
+```java
+public User getUserById(Long id) {
+    User user = userDao.findById(id);
+    if (user != null) {
+        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
+    }
+    return user;
+}
+```
+**After (Unified Diff):**
+```diff
+@@ -4,1 +4,1 @@
+-        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
++        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), k_sign.CryptoService.P10, K_SIGN_JUMIN));
+>>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
 ```
 **Explanation:** Change k_sign.CryptoService.P03 to k_sign.CryptoService.P10 and K_SIGN_SSN to K_SIGN_JUMIN.
 
@@ -243,5 +305,8 @@ The following call stacks show the method call relationships from the upper laye
 3. The file_path must use the absolute path provided in source_files.
 4. Do NOT perform any linting or formatting changes such as removing comments, trimming whitespace, or reformatting code. Only modify what is strictly necessary for encryption/decryption.
 5. Do not remove or insert carrige return at the end of each source file. It should be as it is.
+<<<<<<< HEAD
 6. When writing code, you must keep the indentation of the original code.
+=======
+>>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
 

@@ -21,11 +21,11 @@ class ConfigurationError(Exception):
 class ColumnDetail(BaseModel):
     name: str = Field(..., description="컬럼 이름")
     new_column: Optional[bool] = Field(None, description="새로운 컬럼 여부")
-    column_type: Optional[Literal["dob", "ssn", "name", "sex"]] = Field(
+    column_type: Optional[Literal["dob", "rrn", "name", "sex"]] = Field(
         None,
-        description="컬럼 타입 (dob: 생년월일, ssn: 주민번호, name: 이름, sex: 성별)",
+        description="컬럼 타입 (dob: 생년월일, rrn: 주민등록번호, name: 이름, sex: 성별)",
     )
-    encryption_code: Optional[str] = Field(None, description="암호화 코드")
+    encryption_code: Optional[str] = Field(None, description="암호화 코드 (예: P017, P018, P019)")
 
 
 class AccessTable(BaseModel):
@@ -36,6 +36,76 @@ class AccessTable(BaseModel):
 class TypeHandlerConfig(BaseModel):
     package: str = Field(..., description="Type Handler 패키지 이름")
     output_dir: str = Field(..., description="Type Handler 출력 디렉터리")
+
+
+class MultiStepExecutionConfig(BaseModel):
+    """TwoStep/ThreeStep 공통 실행 옵션
+
+    mode 값에 따른 동작:
+    - "full": Planning + Execution 전체 실행 (기본값)
+    - "plan_only": Planning까지만 실행하고 종료, 결과는 JSON으로 저장
+    - "execution_only": 이전 Planning 결과를 사용하여 Execution만 실행 (plan_timestamp 필수)
+    """
+
+    mode: Literal["full", "plan_only", "execution_only"] = Field(
+        "full",
+        description="실행 모드. 'full': 전체 실행, 'plan_only': Planning까지만, "
+        "'execution_only': Execution만 실행",
+    )
+    plan_timestamp: Optional[str] = Field(
+        None,
+        description="execution_only 모드에서 사용할 이전 Planning 결과의 timestamp. "
+        "예: '20250123_143052'. 해당 timestamp 폴더 내 모든 plan을 실행.",
+    )
+
+
+class TwoStepConfig(BaseModel):
+    """2-Step LLM 협업 설정 (Planning + Execution)"""
+
+    planning_provider: Literal[
+        "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"
+    ] = Field(..., description="Planning 단계에서 사용할 LLM 프로바이더")
+    planning_model: Optional[str] = Field(
+        None, description="Planning 단계에서 사용할 모델 ID (예: gpt-oss-120b)"
+    )
+    execution_provider: Literal[
+        "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"
+    ] = Field(..., description="Execution 단계에서 사용할 LLM 프로바이더")
+    execution_model: Optional[str] = Field(
+        None, description="Execution 단계에서 사용할 모델 ID (예: codestral-2508)"
+    )
+    execution_options: Optional[MultiStepExecutionConfig] = Field(
+        None,
+        description="실행 옵션 (mode, plan_timestamp)",
+    )
+
+
+class ThreeStepConfig(BaseModel):
+    """3-Step LLM 협업 설정 (VO Extraction + Planning + Execution)
+
+    1단계 (VO Extraction): VO 파일 + SQL 쿼리 → vo_info JSON 추출
+    2단계 (Planning): vo_info + 소스코드 + call chain → modification_instructions
+    3단계 (Execution): modification_instructions + 소스코드 → 수정된 코드
+
+    1/2단계는 분석용 모델 (reasoning 우수), 3단계는 코드 생성용 모델 사용
+    """
+
+    analysis_provider: Literal[
+        "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"
+    ] = Field(..., description="1/2단계 (VO Extraction + Planning)에서 사용할 LLM 프로바이더")
+    analysis_model: Optional[str] = Field(
+        None, description="1/2단계에서 사용할 모델 ID (예: gpt-oss-120b)"
+    )
+    execution_provider: Literal[
+        "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"
+    ] = Field(..., description="3단계 (Execution)에서 사용할 LLM 프로바이더")
+    execution_model: Optional[str] = Field(
+        None, description="3단계에서 사용할 모델 ID (예: codestral-2508)"
+    )
+    execution_options: Optional[MultiStepExecutionConfig] = Field(
+        None,
+        description="실행 옵션 (mode, plan_timestamp)",
+    )
 
 
 class Configuration(BaseModel):
@@ -51,20 +121,28 @@ class Configuration(BaseModel):
         "AnyframeSarangOn",
         "AnyframeOld",
         "AnyframeEtc",
+        "AnyframeCCS",
         "SpringBatQrts",
         "AnyframeBatSarangOn",
         "AnyframeBatEtc",
+        "anyframe_ccs_batch",
     ] = Field(
         "SpringMVC", description="프레임워크 타입"
     )
-    sql_wrapping_type: Literal["mybatis", "jdbc", "jpa"] = Field(
+    sql_wrapping_type: Literal["mybatis", "mybatis_ccs", "mybatis_ccs_batch", "jdbc", "jpa"] = Field(
         ..., description="SQL Wrapping 타입"
     )
     access_tables: List[AccessTable] = Field(
         ..., description="암호화 대상 테이블 및 칼럼 정보"
     )
-    modification_type: Literal["TypeHandler", "ControllerOrService", "ServiceImplOrBiz"] = Field(
-        ..., description="코드 수정 타입"
+    modification_type: Literal[
+        "TypeHandler", "ControllerOrService", "ServiceImplOrBiz", "TwoStep", "ThreeStep"
+    ] = Field(..., description="코드 수정 타입")
+    two_step_config: Optional[TwoStepConfig] = Field(
+        None, description="2-Step LLM 협업 설정 (modification_type이 TwoStep일 때 필수)"
+    )
+    three_step_config: Optional[ThreeStepConfig] = Field(
+        None, description="3-Step LLM 협업 설정 (modification_type이 ThreeStep일 때 필수)"
     )
     llm_provider: Literal[
         "watsonx_ai", "claude_ai", "openai", "mock", "watsonx_ai_on_prem"
