@@ -199,6 +199,10 @@ ApplyCrypto는 계층형 아키텍처로 설계되어 있으며, 각 레이어�
 ## 프로그램 실행
 ```powershell
 .\venv\Scripts\activate # 가상환경 실행
+
+# 템플릿 초기화 (최초 1회 및 템플릿 변경 시 실행)
+python initialize_template.py
+
 applycrypto --help
 ```
 
