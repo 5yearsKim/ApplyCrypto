@@ -17,6 +17,82 @@ class MybatisContextGenerator(BaseContextGenerator):
     Groups files based on import relationships between Controller and Service layers.
     """
 
+    # VO 파일 최대 토큰 예산 (80k = 128k 모델의 ~62%, 출력용 48k 여유)
+    MAX_VO_TOKENS = 80000
+
+    def _calculate_token_size(self, text: str) -> int:
+        """
+        텍스트의 토큰 크기를 계산합니다.
+
+        tiktoken 라이브러리가 있으면 정확히 계산하고,
+        없으면 문자 4개당 1토큰으로 근사합니다.
+
+        Args:
+            text: 토큰 크기를 계산할 텍스트
+
+        Returns:
+            int: 추정 토큰 수
+        """
+        try:
+            import tiktoken
+
+            encoder = tiktoken.encoding_for_model("gpt-4")
+            return len(encoder.encode(text))
+        except Exception:
+            # tiktoken 없으면 근사값 사용 (4문자 = 1토큰)
+            return len(text) // 4
+
+    def _select_vo_files_by_token_budget(
+        self,
+        vo_files: List[str],
+        all_imports: set,
+        max_tokens: int,
+    ) -> List[str]:
+        """
+        토큰 예산 내에서 VO 파일을 선택합니다.
+
+        import 문 순서대로 VO 파일을 매칭하고, 토큰 예산을 초과하면 중단합니다.
+
+        Args:
+            vo_files: 전체 VO 파일 목록
+            all_imports: Controller + Service의 모든 import 문
+            max_tokens: 최대 토큰 예산 (기본 80k)
+
+        Returns:
+            List[str]: 선택된 VO 파일 경로 목록
+        """
+        selected_files: List[str] = []
+        current_tokens = 0
+
+        for imp in all_imports:
+            matched = self._match_import_to_file_path(imp, vo_files)
+            if matched and matched not in selected_files:
+                try:
+                    with open(matched, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    file_tokens = self._calculate_token_size(content)
+
+                    if current_tokens + file_tokens <= max_tokens:
+                        selected_files.append(matched)
+                        current_tokens += file_tokens
+                        logger.debug(
+                            f"VO 선택: {Path(matched).name} "
+                            f"({file_tokens:,} tokens, 누적: {current_tokens:,})"
+                        )
+                    else:
+                        logger.info(
+                            f"VO 토큰 예산 초과로 제외: {Path(matched).name} "
+                            f"({file_tokens:,} tokens, 현재 누적: {current_tokens:,})"
+                        )
+                except Exception as e:
+                    logger.warning(f"VO 파일 읽기 실패: {matched} - {e}")
+
+        logger.info(
+            f"VO 파일 선택 완료: {len(selected_files)}개, "
+            f"총 {current_tokens:,} tokens (예산: {max_tokens:,})"
+        )
+        return selected_files
+
     def _match_import_to_file_path(
         self, import_statement: str, target_files: List[str]
     ) -> Optional[str]:
@@ -77,41 +153,6 @@ class MybatisContextGenerator(BaseContextGenerator):
         # JavaASTParser 인스턴스 생성
         java_parser = JavaASTParser()
 
-        # Service import들을 사전에 수집하여, Controller가 직접 import 하지 않은 Service에서만 import된 VO도 포함되도록 한다.
-        # (와일드카드/무import 케이스는 이번 변경 범위에서 제외)
-        all_service_imports = set()
-        for service_file in service_files:
-            try:
-                service_path = Path(service_file)
-                service_tree, service_error = java_parser.parse_file(service_path)
-                if service_error:
-                    logger.debug(
-                        f"Service 파일 파싱 실패(사전 수집): {service_file} - {service_error}"
-                    )
-                    continue
-
-                service_classes = java_parser.extract_class_info(
-                    service_tree, service_path
-                )
-                if not service_classes:
-                    continue
-
-                service_class = None
-                for cls in service_classes:
-                    if cls.access_modifier == "public":
-                        service_class = cls
-                        break
-                if service_class is None:
-                    service_class = service_classes[0]
-
-                all_service_imports.update(service_class.imports)
-                print(service_class.imports)
-            except Exception as e:
-                logger.warning(
-                    f"Service 파일 처리 실패(사전 수집): {service_file} - {e}"
-                )
-                continue
-
         # Controller별 파일 묶음을 저장할 딕셔너리
         # key: controller 파일 이름(stem), value: 관련 파일 경로 리스트
         file_groups: Dict[str, List[str]] = {}
@@ -138,6 +179,7 @@ class MybatisContextGenerator(BaseContextGenerator):
                     )
                     # 파싱 실패해도 controller 파일만 포함된 그룹으로 저장
                     file_groups[controller_key] = file_group_paths
+                    context_file_groups[controller_key] = []
                     continue
 
                 # 클래스 정보 추출
@@ -149,6 +191,7 @@ class MybatisContextGenerator(BaseContextGenerator):
                     )
                     # 클래스 정보가 없어도 controller 파일만 포함된 그룹으로 저장
                     file_groups[controller_key] = file_group_paths
+                    context_file_groups[controller_key] = []
                     continue
 
                 # public class 찾기
@@ -180,26 +223,42 @@ class MybatisContextGenerator(BaseContextGenerator):
                         if matched_file not in file_group_paths:
                             file_group_paths.append(matched_file)
 
-                # 5. 3번에서 포함된 Service Layer의 파일 각각에 대해 JavaASTParser를 사용하여
-                # class 정보를 가져오고 그 중에서 public class를 선택하여 import 문을 가져와서 import 목록을 보강한다
-                # 기존: matched_service_files(=Controller가 import한 Service)만 보강
-                # 변경: service_files 전체에서 수집한 import를 합쳐 service-only import VO도 포함
-                enhanced_imports = set(controller_imports)
-                enhanced_imports.update(all_service_imports)
+                # 5. 실제 호출하는 Service들의 import만 수집
+                # (Controller가 import한 Service 체인에서만 import 수집)
+                chain_imports: set = set(controller_imports)
+                for svc_file in matched_service_files:
+                    try:
+                        svc_path = Path(svc_file)
+                        svc_tree, svc_error = java_parser.parse_file(svc_path)
+                        if svc_error:
+                            continue
+                        svc_classes = java_parser.extract_class_info(svc_tree, svc_path)
+                        if svc_classes:
+                            svc_class = next(
+                                (c for c in svc_classes if c.access_modifier == "public"),
+                                svc_classes[0],
+                            )
+                            chain_imports.update(svc_class.imports)
+                    except Exception as e:
+                        logger.warning(f"Service import 수집 실패: {svc_file} - {e}")
 
-                # 6. Repository Layer에 수집되어 있는 파일 목록 중에서
-                # import 목록에 포함되어 있는 파일들만 선택해서 VO 그룹에 추가한다 (context용)
-                for import_stmt in enhanced_imports:
-                    matched_file = self._match_import_to_file_path(
-                        import_stmt, repository_files
-                    )
-                    if matched_file and matched_file not in vo_group_paths:
-                        vo_group_paths.append(matched_file)
+                # 6. 해당 Controller-Service 체인에서 실제 사용하는 VO만 토큰 예산 내에서 선택
+                vo_group_paths = self._select_vo_files_by_token_budget(
+                    vo_files=repository_files,
+                    all_imports=chain_imports,
+                    max_tokens=self.MAX_VO_TOKENS,
+                )
+                logger.info(
+                    f"Controller '{controller_key}': "
+                    f"Service 체인 {len(matched_service_files)}개에서 "
+                    f"VO {len(vo_group_paths)}개 선택"
+                )
 
             except Exception as e:
                 logger.warning(f"Controller 파일 처리 실패: {controller_file} - {e}")
                 # 에러 발생해도 controller 파일만 포함된 그룹으로 저장
                 file_groups[controller_key] = file_group_paths
+                context_file_groups[controller_key] = []
                 continue
 
             # 파일 그룹 저장

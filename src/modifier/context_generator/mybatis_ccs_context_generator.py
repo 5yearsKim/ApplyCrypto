@@ -56,6 +56,9 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
     # context_files에 포함할 추가 패턴 (import 경로에서 매칭)
     CONTEXT_INCLUDE_PATTERNS = ["svcutil"]
 
+    # DVO 파일 최대 토큰 예산 (80k = 128k 모델의 ~62%, 출력용 48k 여유)
+    MAX_DVO_TOKENS = 80000
+
     def _match_import_to_file_path(
         self, import_statement: str, target_files: List[str]
     ) -> Optional[str]:
@@ -239,6 +242,79 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
 
         return svcutil_files
 
+    def _calculate_token_size(self, text: str) -> int:
+        """
+        텍스트의 토큰 크기를 계산합니다.
+
+        tiktoken 라이브러리가 있으면 정확히 계산하고,
+        없으면 문자 4개당 1토큰으로 근사합니다.
+
+        Args:
+            text: 토큰 크기를 계산할 텍스트
+
+        Returns:
+            int: 추정 토큰 수
+        """
+        try:
+            import tiktoken
+
+            encoder = tiktoken.encoding_for_model("gpt-4")
+            return len(encoder.encode(text))
+        except Exception:
+            # tiktoken 없으면 근사값 사용 (4문자 = 1토큰)
+            return len(text) // 4
+
+    def _select_dvo_files_by_token_budget(
+        self,
+        dvo_files: List[str],
+        all_imports: set,
+        max_tokens: int,
+    ) -> List[str]:
+        """
+        토큰 예산 내에서 DVO 파일을 선택합니다.
+
+        import 문 순서대로 DVO 파일을 매칭하고, 토큰 예산을 초과하면 중단합니다.
+
+        Args:
+            dvo_files: 전체 DVO 파일 목록
+            all_imports: Controller + Service의 모든 import 문
+            max_tokens: 최대 토큰 예산 (기본 80k)
+
+        Returns:
+            List[str]: 선택된 DVO 파일 경로 목록
+        """
+        selected_files: List[str] = []
+        current_tokens = 0
+
+        for imp in all_imports:
+            matched = self._match_import_to_file_path(imp, dvo_files)
+            if matched and matched not in selected_files:
+                try:
+                    with open(matched, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    file_tokens = self._calculate_token_size(content)
+
+                    if current_tokens + file_tokens <= max_tokens:
+                        selected_files.append(matched)
+                        current_tokens += file_tokens
+                        logger.debug(
+                            f"DVO 선택: {Path(matched).name} "
+                            f"({file_tokens:,} tokens, 누적: {current_tokens:,})"
+                        )
+                    else:
+                        logger.info(
+                            f"DVO 토큰 예산 초과로 제외: {Path(matched).name} "
+                            f"({file_tokens:,} tokens, 현재 누적: {current_tokens:,})"
+                        )
+                except Exception as e:
+                    logger.warning(f"DVO 파일 읽기 실패: {matched} - {e}")
+
+        logger.info(
+            f"DVO 파일 선택 완료: {len(selected_files)}개, "
+            f"총 {current_tokens:,} tokens (예산: {max_tokens:,})"
+        )
+        return selected_files
+
     def _normalize_layer_files(
         self, layer_files: Dict[str, List[str]]
     ) -> Dict[str, List[str]]:
@@ -302,29 +378,10 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
 
         java_parser = JavaASTParser()
 
-        # Service의 모든 import 사전 수집
-        all_service_imports: set = set()
-        for svc_file in service_files:
-            try:
-                svc_path = Path(svc_file)
-                tree, error = java_parser.parse_file(svc_path)
-                if error:
-                    continue
-
-                classes = java_parser.extract_class_info(tree, svc_path)
-                if classes:
-                    target_class = next(
-                        (c for c in classes if c.access_modifier == "public"),
-                        classes[0],
-                    )
-                    all_service_imports.update(target_class.imports)
-            except Exception as e:
-                logger.warning(f"Service import 수집 실패: {svc_file} - {e}")
-
         file_groups: Dict[str, List[str]] = {}
         context_groups: Dict[str, List[str]] = {}
 
-        # Controller별 파일 그룹 생성
+        # Controller별 파일 그룹 생성 (각 Controller-Service 체인에서 실제 사용하는 DVO만 선택)
         for ctl_file in controller_files:
             ctl_path = Path(ctl_file)
             ctl_key = ctl_path.stem
@@ -335,11 +392,13 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
                 tree, error = java_parser.parse_file(ctl_path)
                 if error:
                     file_groups[ctl_key] = file_paths
+                    context_groups[ctl_key] = context_files
                     continue
 
                 classes = java_parser.extract_class_info(tree, ctl_path)
                 if not classes:
                     file_groups[ctl_key] = file_paths
+                    context_groups[ctl_key] = context_files
                     continue
 
                 ctl_class = next(
@@ -356,27 +415,46 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
                     if svc not in file_paths:
                         file_paths.append(svc)
 
-                # Context 파일 수집 (DVO만 포함, DQM/svcutil은 프롬프트 길이 문제로 제외)
-                all_imports = ctl_imports | all_service_imports
+                # 실제 호출하는 Service들의 import만 수집
+                chain_imports: set = set(ctl_imports)
+                for svc_file in collected_services:
+                    try:
+                        svc_path = Path(svc_file)
+                        svc_tree, svc_error = java_parser.parse_file(svc_path)
+                        if svc_error:
+                            continue
+                        svc_classes = java_parser.extract_class_info(svc_tree, svc_path)
+                        if svc_classes:
+                            svc_class = next(
+                                (c for c in svc_classes if c.access_modifier == "public"),
+                                svc_classes[0],
+                            )
+                            chain_imports.update(svc_class.imports)
+                    except Exception as e:
+                        logger.warning(f"Service import 수집 실패: {svc_file} - {e}")
 
-                # DVO 파일만 포함
-                MAX_DVO_FILES = 3
-                for imp in all_imports:
-                    if len(context_files) >= MAX_DVO_FILES:
-                        break
-                    matched = self._match_import_to_file_path(imp, dvo_files)
-                    if matched and matched not in context_files:
-                        context_files.append(matched)
+                # 해당 Controller-Service 체인에서 실제 사용하는 DVO만 선택
+                context_files = self._select_dvo_files_by_token_budget(
+                    dvo_files=dvo_files,
+                    all_imports=chain_imports,
+                    max_tokens=self.MAX_DVO_TOKENS,
+                )
+                logger.info(
+                    f"Controller '{ctl_key}': "
+                    f"Service 체인 {len(collected_services)}개에서 "
+                    f"DVO {len(context_files)}개 선택"
+                )
 
             except Exception as e:
                 logger.warning(f"Controller 처리 실패: {ctl_file} - {e}")
                 file_groups[ctl_key] = file_paths
+                context_groups[ctl_key] = []
                 continue
 
             file_groups[ctl_key] = file_paths
             context_groups[ctl_key] = context_files
 
-        # Batch 생성
+        # Batch 생성 (각 Controller별 실제 사용하는 DVO context 적용)
         for ctl_key, file_paths in file_groups.items():
             if not file_paths:
                 continue
@@ -386,7 +464,7 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
             logger.info(
                 f"Controller '{ctl_key}': "
                 f"{len(file_paths)}개 수정 대상, "
-                f"{len(ctx_files)}개 context (DVO)"
+                f"{len(ctx_files)}개 DVO context"
             )
 
             batches = self.create_batches(

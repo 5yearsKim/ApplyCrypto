@@ -191,10 +191,25 @@ def print_context_summary(
             print(f"    - [{layer_hint}] {filename}")
 
         if ctx.context_files:
-            print("  Context Files (수정 대상 아님):")
+            print("  Context Files (수정 대상 아님, 토큰 정보 포함):")
+            total_vo_tokens = 0
             for file_path in ctx.context_files:
                 filename = Path(file_path).name
-                print(f"    - [VO] {filename}")
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    # 근사 토큰 계산 (4문자 = 1토큰)
+                    file_tokens = len(content) // 4
+                    total_vo_tokens += file_tokens
+                    print(f"    - [VO] {filename} (~{file_tokens:,} tokens)")
+                except Exception:
+                    print(f"    - [VO] {filename} (읽기 실패)")
+
+            print(f"  총 VO 토큰 예상: ~{total_vo_tokens:,} tokens")
+            if total_vo_tokens > 80000:
+                print("  ⚠️  경고: VO 토큰이 80k를 초과! LLM 응답 실패 가능")
+            elif total_vo_tokens > 60000:
+                print("  ⚡ 주의: VO 토큰이 60k를 초과. 프롬프트가 클 수 있음")
 
         print("-" * 70)
 
