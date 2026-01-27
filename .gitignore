@@ -81,3 +81,5 @@ prompt_temp
 prompt_temp.md
 prompt_results
 .claude/
+
+src/modifier/code_generator/**/*template*.md

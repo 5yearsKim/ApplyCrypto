@@ -88,7 +88,21 @@ class BaseCodeGenerator(ABC):
             self.template_path = template_dir / template_filename
 
         if not self.template_path.exists():
-            raise FileNotFoundError(f"Please define {self.template_path.name} under {self.template_path.parent} dir")
+            raise FileNotFoundError(
+                f"\n{'='*60}\n"
+                f" [오류] 템플릿 파일을 찾을 수 없습니다\n"
+                f"{'='*60}\n\n"
+                f"찾으려는 파일:\n"
+                f"  {self.template_path.name}\n\n"
+                f"예상 경로:\n"
+                f"  {self.template_path}\n\n"
+                f"💡 해결 방법:\n"
+                f"  모든 템플릿은 'src/templates' 디렉토리 구조 내에 정의되어야 합니다.\n"
+                f"  '{self.template_path.parent}' 디렉토리 아래에\n"
+                f"  '{self.template_path.name}' 파일을 생성하거나 복사해주세요.\n\n"
+                f"  파일을 위치시킨 후 다시 실행해 주세요.\n"
+                f"{'='*60}"
+            )
 
         # 토큰 인코더 초기화 (GPT-4용)
         try:

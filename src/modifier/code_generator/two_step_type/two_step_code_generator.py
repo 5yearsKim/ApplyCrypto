@@ -75,11 +75,35 @@ class TwoStepCodeGenerator(BaseMultiStepCodeGenerator):
 
         if not self.planning_template_path.exists():
             raise FileNotFoundError(
-                f"Planning 템플릿을 찾을 수 없습니다: {self.planning_template_path}"
+                f"\n{'='*60}\n"
+                f" [오류] Planning 템플릿 파일을 찾을 수 없습니다\n"
+                f"{'='*60}\n\n"
+                f"찾으려는 파일:\n"
+                f"  {self.planning_template_path.name}\n\n"
+                f"예상 경로:\n"
+                f"  {self.planning_template_path}\n\n"
+                f"💡 해결 방법:\n"
+                f"  모든 템플릿은 'src/templates' 디렉토리 구조 내에 정의되어야 합니다.\n"
+                f"  '{self.planning_template_path.parent}' 디렉토리 아래에\n"
+                f"  '{self.planning_template_path.name}' 파일을 생성하거나 복사해주세요.\n\n"
+                f"  파일을 위치시킨 후 다시 실행해 주세요.\n"
+                f"{'='*60}"
             )
         if not self.execution_template_path.exists():
             raise FileNotFoundError(
-                f"Execution 템플릿을 찾을 수 없습니다: {self.execution_template_path}"
+                f"\n{'='*60}\n"
+                f" [오류] Execution 템플릿 파일을 찾을 수 없습니다\n"
+                f"{'='*60}\n\n"
+                f"찾으려는 파일:\n"
+                f"  {self.execution_template_path.name}\n\n"
+                f"예상 경로:\n"
+                f"  {self.execution_template_path}\n\n"
+                f"💡 해결 방법:\n"
+                f"  모든 템플릿은 'src/templates' 디렉토리 구조 내에 정의되어야 합니다.\n"
+                f"  '{self.execution_template_path.parent}' 디렉토리 아래에\n"
+                f"  '{self.execution_template_path.name}' 파일을 생성하거나 복사해주세요.\n\n"
+                f"  파일을 위치시킨 후 다시 실행해 주세요.\n"
+                f"{'='*60}"
             )
 
         # BaseContextGenerator.create_batches()에서 토큰 계산을 위해 사용하는 속성
