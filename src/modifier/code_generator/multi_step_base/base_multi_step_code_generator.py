@@ -1048,7 +1048,7 @@ class BaseMultiStepCodeGenerator(BaseCodeGenerator):
         }
 
         # 템플릿 렌더링
-        template_str = self._load_template(self._get_execution_template_pat())
+        template_str = self._load_template(self._get_execution_template_path())
         prompt = self._render_template(template_str, variables)
 
         return prompt, index_to_path, file_mapping, path_to_content
