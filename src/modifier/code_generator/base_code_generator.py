@@ -74,16 +74,21 @@ class BaseCodeGenerator(ABC):
             else:
                 template_dir = Path(__file__).parent
 
-            # generate_full_source 설정에 따라 템플릿 파일 선택
-            if config and config.generate_full_source:
+            # generate_type 설정에 따라 템플릿 파일 선택
+            if config.generate_type == "full_source":
                 template_filename = "template_full.md"
-            else:
+            elif config.generate_type == "diff":
                 template_filename = "template_diff.md"
+            elif config.generate_type == "part":
+                template_filename = "template_part.md"
+            else:
+                raise ValueError(f"Unsupported generate_type: {config.generate_type}")
+
 
             self.template_path = template_dir / template_filename
 
         if not self.template_path.exists():
-            raise FileNotFoundError(f"Template not found at: {self.template_path}")
+            raise FileNotFoundError(f"Please define {self.template_path.name} under {self.template_path.parent} dir")
 
         # 토큰 인코더 초기화 (GPT-4용)
         try:
@@ -126,37 +131,36 @@ class BaseCodeGenerator(ABC):
             str: 생성된 프롬프트
         """
         snippets = []
+
         for file_path in input_data.file_paths:
-            try:
-                path_obj = Path(file_path)
-                if path_obj.exists():
-                    with open(path_obj, "r", encoding="utf-8") as f:
-                        content = f.read()
-                    snippets.append(f"=== File: {path_obj.name} ===\n{content}")
-                else:
-                    logger.warning(f"File not found: {file_path}")
-            except Exception as e:
-                logger.error(f"Failed to read file for prompt: {file_path} - {e}")
+            path_obj = Path(file_path)
+            if not path_obj.exists():
+                logger.warning(f"File not found: {file_path}")
+                continue
+
+            with open(path_obj, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+
+            if self.config and self.config.generate_type == 'full_source':
+                file_block = (
+                    f"=== File: {path_obj.name} ===\n"
+                    + "".join(lines)
+                )
+            else:
+                numbered_lines = [
+                    f"{idx}|{line.rstrip()}"
+                    for idx, line in enumerate(lines, start=1)
+                ]
+
+                file_block = (
+                    f"=== File: {path_obj.name} ===\n"
+                    + "\n".join(numbered_lines)
+                )
+            snippets.append(file_block)
+
 
         source_files_str = "\n\n".join(snippets)
 
-        # context_files 처리 (VO 등 참조용 파일)
-        context_snippets = []
-        for file_path in input_data.context_files:
-            try:
-                path_obj = Path(file_path)
-                if path_obj.exists():
-                    with open(path_obj, "r", encoding="utf-8") as f:
-                        content = f.read()
-                    context_snippets.append(f"=== File: {path_obj.name} ===\n{content}")
-                else:
-                    logger.warning(f"Context file not found: {file_path}")
-            except Exception as e:
-                logger.error(
-                    f"Failed to read context file for prompt: {file_path} - {e}"
-                )
-
-        context_files_str = "\n\n".join(context_snippets) if context_snippets else ""
 
         # 배치 프롬프트 생성
         batch_variables = {

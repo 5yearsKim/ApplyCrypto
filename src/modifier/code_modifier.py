@@ -19,7 +19,7 @@ from models.table_access_info import TableAccessInfo
 from .code_generator.code_generator_factory import CodeGeneratorFactory
 from .code_generator.base_code_generator import BaseCodeGenerator
 from .context_generator.context_generator_factory import ContextGeneratorFactory
-from .code_patcher import CodePatcher
+from .code_patcher import DiffCodePatcher, FullSourceCodePatcher, PartCodePatcher
 from .error_handler import ErrorHandler
 from .llm.llm_factory import create_llm_provider
 from .llm.llm_provider import LLMProvider
@@ -70,16 +70,20 @@ class CodeModifier:
             code_generator=self.code_generator,
         )
 
-        self.code_patcher = CodePatcher(
-            project_root=self.target_project, config=self.config
-        )
+
+
         self.error_handler = ErrorHandler(max_retries=config.max_retries)
         self.result_tracker = ResultTracker(self.target_project)
         self._current_table_access_info: Optional[TableAccessInfo] = None
 
+        # 초기화 시 프로젝트 전체 Java 파일에 대해 Lint 수행 (Trailing Spaces 제거)
+        # TODO: setup_lint_code implementation was missing in migration source.
+        # self.code_patcher.setup_lint_code()
+
         logger.info(
             f"CodeModifier 초기화 완료: {self.llm_provider.get_provider_name()}"
         )
+
 
     def _get_api_key_from_env(self, provider_name: str) -> Optional[str]:
         """
@@ -99,71 +103,6 @@ class CodeModifier:
             return os.getenv("OPENAI_API_KEY")
 
         return None
-
-    # def modify_sources(
-    #     self, table_access_info: TableAccessInfo, dry_run: bool = False
-    # ) -> Dict[str, Any]:
-    #     """
-    #     소스 파일들을 수정합니다.
-
-    #     Args:
-    #         table_access_info: 테이블 접근 정보
-    #         dry_run: 실제 수정 없이 시뮬레이션만 수행 (기본값: False)
-
-    #     Returns:
-    #         Dict[str, Any]: 수정 결과
-    #     """
-    #     logger.info(f"소스 파일 수정 시작: {table_access_info.table_name}")
-    #     self.result_tracker.start_tracking()
-
-    #     try:
-    #         # 1. 수정 계획 생성
-    #         plans: List[ModificationPlan] = self.generate_modification_plans(
-    #             table_access_info
-    #         )
-
-    #         all_modifications = []
-
-    #         # 2. 계획 적용
-    #         for plan in plans:
-    #             result = self.apply_modification_plan(plan, dry_run=dry_run)
-    #             all_modifications.append(result)
-
-    #         # 결과 추적
-    #         self.result_tracker.end_tracking()
-    #         self.result_tracker.update_table_access_info(
-    #             table_access_info, all_modifications
-    #         )
-
-    #         # 수정 이력 저장
-    #         self.result_tracker.save_modification_history(
-    #             table_access_info.table_name, all_modifications
-    #         )
-
-    #         # 통계 저장
-    #         self.result_tracker.save_statistics()
-
-    #         logger.info(
-    #             f"소스 파일 수정 완료: {table_access_info.table_name} "
-    #             f"({len(all_modifications)}개 파일 수정)"
-    #         )
-
-    #         return {
-    #             "success": True,
-    #             "modifications": all_modifications,
-    #             "statistics": self.result_tracker.get_statistics(),
-    #         }
-
-    #     except Exception as e:
-    #         logger.error(f"소스 파일 수정 실패: {e}")
-    #         self.result_tracker.end_tracking()
-    #         return {
-    #             "success": False,
-    #             "error": str(e),
-    #             "statistics": self.result_tracker.get_statistics(),
-    #         }
-
-    
 
     def generate_contexts(
         self, table_access_info: TableAccessInfo
@@ -232,7 +171,7 @@ class CodeModifier:
                 layer=layer_name,
                 modification_type=modification_type,
                 status=status,
-                diff=modified_code,
+                modified_code=modified_code,
                 error=error_msg,
                 tokens_used=tokens_used,
                 reason=reason,
@@ -245,7 +184,7 @@ class CodeModifier:
                 layer=layer_name,
                 modification_type=modification_type,
                 status="skipped",
-                diff=None,
+                modified_code=None,
                 error="No modified code generated",
                 tokens_used=tokens_used,
                 reason=reason,
@@ -254,19 +193,41 @@ class CodeModifier:
         try:
             file_path = Path(file_path_str)
 
+            if dry_run:
+                logger.info(f"[DRY RUN] 수정 시뮬레이션: {file_path}")
+                return self.result_tracker.record_modification(
+                    file_path=str(file_path),
+                    layer=layer_name,
+                    modification_type=modification_type,
+                    status="success",
+                    modified_code=modified_code,
+                    error=None,
+                    tokens_used=tokens_used,
+                    reason=reason,
+                )
+
             # 파일 백업
-            if not dry_run:
-                self.error_handler.backup_file(file_path)
+            backup_path = self.error_handler.backup_file(file_path)
 
             # 패치 적용
-            if self.config.generate_full_source:
-                success, error = self.code_patcher.replace_full_code(
-                    file_path=file_path, full_source=modified_code, dry_run=dry_run
+            if self.config.generate_type == "full_source":
+                patcher = FullSourceCodePatcher(
+                    project_root=self.target_project, config=self.config
+                )
+            elif self.config.generate_type == "part":
+                patcher = PartCodePatcher(
+                    project_root=self.target_project, config=self.config
+                )
+            elif self.config.generate_type == "diff":
+                patcher = DiffCodePatcher(
+                    project_root=self.target_project, config=self.config
                 )
             else:
-                success, error = self.code_patcher.apply_patch(
-                    file_path=file_path, modified_code=modified_code, dry_run=dry_run
-                )
+                raise ValueError(f"Invalid generate_type: {self.config.generate_type}")
+
+            success, error = patcher.apply_patch(
+                file_path=file_path, modified_code=modified_code
+            )
 
             if success:
                 status = "success"
@@ -275,8 +236,7 @@ class CodeModifier:
                 status = "failed"
                 error_msg = error
                 # 롤백은 apply_patch 내부나 error_handler에서 처리하지 않으므로 여기서 복구
-                if not dry_run:
-                    self.error_handler.restore_file(file_path)
+                self.error_handler.restore_file(file_path)
 
             # 수정 정보 기록
             return self.result_tracker.record_modification(
@@ -284,7 +244,8 @@ class CodeModifier:
                 layer=layer_name,
                 modification_type=modification_type,
                 status=status,
-                diff=modified_code if status == "success" else None,
+                modified_code=modified_code if status == "success" else None,
+                backup_path=str(backup_path) if backup_path else None,
                 error=error_msg,
                 tokens_used=tokens_used,
                 reason=reason,

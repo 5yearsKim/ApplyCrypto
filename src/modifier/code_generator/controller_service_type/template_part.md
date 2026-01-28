@@ -1,7 +1,7 @@
 # Java Source Code Privacy Data Encryption Modification Task
 
 ## Role and Objective
-You are an expert Java developer specializing in Spring Framework applications. Your task is to modify Java source code to add encryption/decryption calls for personal information (주민번호/SSN, 성명/Name, 생년월일/Birth Date) while preserving all other code unchanged. Output the unified diff of the modified source code. Do NOT output the full source code.
+You are an expert Java developer specializing in Spring Framework applications. Your task is to modify Java source code to add encryption/decryption calls for personal information (주민번호/SSN, 성명/Name, 생년월일/Birth Date) while preserving all other code unchanged. Output the modifications using Search/Replace blocks. Do NOT output the full source code.
 
 ## Critical Requirements
 
@@ -106,8 +106,8 @@ For example, in the case of Spring framework, the selection and modification of 
 
 ### 5. Output Requirements
 
-If there is change that you applied in the input source file, you have to generate a Unified Diff representing the changes.
-Do not output the full source file, only the diff.
+If there is change that you applied in the input source file, you have to generate Search/Replace blocks representing the changes.
+Do not output the full source file, only the Search/Replace blocks.
 
 ### 6. Output Format Requirements
 **Output Format**
@@ -119,26 +119,44 @@ For EACH input source file, you MUST output in the following format using delimi
 ======REASON======
 {Brief explanation of the modification or why modification is not required}
 ======MODIFIED_CODE======
-{If modified: the Unified Diff of the changes}
+{If modified: one or more Search/Replace blocks}
 {If not modified: leave this section empty}
 ======END======
 ```
 
 The 'modification' should keep the same number of input source files in its list.
-If there are modifications, ensure that "modified_code" contains the unified diff.
+If there are modifications, ensure that "modified_code" contains the Search/Replace blocks.
 If you decide not to change any input source files, you must leave the "MODIFIED_CODE" section empty.
 
-**Unified Diff Format Example:**
-```diff
---- a/src/main/java/com/example/UserService.java
-+++ b/src/main/java/com/example/UserService.java
-@@ -32,7 +32,7 @@
-     public void saveUser(UserDTO user) {
--        userMapper.insertUser(user);
-+        user.setName(k_sign.CryptoService.encrypt(user.getName(), k_sign.CryptoService.P20, K_SIGN_NAME));
-+        userMapper.insertUser(user);
-     }
+**Search/Replace Block Format:**
+You must use the following format to specify changes:
 ```
+<<< SEARCH
+{Exact code to be replaced}
+===
+{New code to replace with}
+>>> REPLACE
+```
+
+- **SEARCH block**: Must match the existing code EXACTLY, character-for-character, including whitespace and indentation.
+- **REPLACE block**: The new code that will replace the SEARCH block.
+- **No Line Numbers**: Do not include line numbers in the SEARCH or REPLACE blocks.
+- **Search Scope**: The SEARCH block MUST include the ENTIRE method block, from the method signature to the closing brace. This is to ensure context and uniqueness.
+- **Indentation**: The SEARCH and REPLACE blocks must reflect the actual indentation of the file. Do not start lines at column 0 if the original code is indented.
+- **Multiple Changes**: You can include multiple SEARCH/REPLACE blocks within the `======MODIFIED_CODE======` section if there are multiple changes in the same file.
+  Example:
+  ```
+  <<< SEARCH
+  int x = 1;
+  ===
+  int x = 2;
+  >>> REPLACE
+  <<< SEARCH
+  int y = 3;
+  ===
+  int y = 4;
+  >>> REPLACE
+  ```
 
 **Critical import point**
 You must generate "modification" key. This can not be omitted.
@@ -147,7 +165,6 @@ Do not generate any other comments, contents, words except for "modifications".
 ## Few-shot Examples
 
 ### Example 1: Service Layer - Save (Encrypt plain data columns)
-<<<<<<< HEAD
 **Output:**
 ```
 ======FILE======
@@ -155,33 +172,22 @@ src/service/UserService.java
 ======REASON======
 Encrypt transformation for plain data columns before saving.
 ======MODIFIED_CODE======
---- a/src/service/UserService.java
-+++ b/src/service/UserService.java
-=======
-**Before:**
-```java
-public void saveUser(User user) {
+<<< SEARCH
+public void createUser(User user) {
     userDao.insert(user);
 }
-```
-**After (Unified Diff):**
-```diff
->>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
-@@ -1,3 +1,5 @@
- public void saveUser(User user) {
-+    user.setName(k_sign.CryptoService.encrypt(user.getName(), k_sign.CryptoService.P20, K_SIGN_NAME));
-+    user.setDob(k_sign.CryptoService.encrypt(user.getDob(), k_sign.CryptoService.P30, K_SIGN_DOB));
-     userDao.insert(user);
- }
-<<<<<<< HEAD
+===
+public void createUser(User user) {
+    user.setName(k_sign.CryptoService.encrypt(user.getName(), k_sign.CryptoService.P20, K_SIGN_NAME));
+    user.setDob(k_sign.CryptoService.encrypt(user.getDob(), k_sign.CryptoService.P30, K_SIGN_DOB));
+    userDao.insert(user);
+}
+>>> REPLACE
 ======END======
-=======
->>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
 ```
 **Explanation:** Encrypt transformation for plain data columns before saving.
 
 ### Example 2: Service Layer - Retrieve (Decrypt plain data columns)
-<<<<<<< HEAD
 **Output:**
 ```
 ======FILE======
@@ -189,36 +195,26 @@ src/service/UserService.java
 ======REASON======
 Decrypt encrypted plain data columns before returning after retrieval.
 ======MODIFIED_CODE======
---- a/src/service/UserService.java
-+++ b/src/service/UserService.java
-=======
-**Before:**
-```java
-public User getUserById(Long id) {
+<<< SEARCH
+public User getUser(String id) {
     User user = userDao.findById(id);
     return user;
 }
-```
-**After (Unified Diff):**
-```diff
->>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
-@@ -2,4 +2,6 @@
-     User user = userDao.findById(id);
--    return user;
-+    if (user != null) {
-+        user.setName(k_sign.CryptoService.decrypt(user.getName(), k_sign.CryptoService.P20, K_SIGN_NAME));
-+        user.setDob(k_sign.CryptoService.decrypt(user.getDob(), k_sign.CryptoService.P30, K_SIGN_DOB));
-+    }
-+    return user;
-<<<<<<< HEAD
+===
+public User getUser(String id) {
+    User user = userDao.findById(id);
+    if (user != null) {
+        user.setName(k_sign.CryptoService.decrypt(user.getName(), k_sign.CryptoService.P20, K_SIGN_NAME));
+        user.setDob(k_sign.CryptoService.decrypt(user.getDob(), k_sign.CryptoService.P30, K_SIGN_DOB));
+    }
+    return user;
+}
+>>> REPLACE
 ======END======
-=======
->>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
 ```
 **Explanation:** Decrypt encrypted plain data columns before returning after retrieval.
 
 ### Example 3: Service Layer - Save (Encrypt resident number column, change K_SIGN_SSN to K_SIGN_JUMIN)
-<<<<<<< HEAD
 **Output:**
 ```
 ======FILE======
@@ -226,31 +222,24 @@ src/service/UserService.java
 ======REASON======
 Change k_sign.CryptoService.P03 to k_sign.CryptoService.P10 and K_SIGN_SSN to K_SIGN_JUMIN.
 ======MODIFIED_CODE======
---- a/src/service/UserService.java
-+++ b/src/service/UserService.java
-@@ -2,1 +2,1 @@
--    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
-+    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), k_sign.CryptoService.P10, K_SIGN_JUMIN));
-======END======
-=======
-**Before:**
-```java
-public void saveUser(User user) {
+<<< SEARCH
+public void updateUserJumin(User user) {
+    // Legacy encryption
     user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
-    userDao.insert(user);
+    userDao.update(user);
 }
-```
-**After (Unified Diff):**
-```diff
-@@ -2,1 +2,1 @@
--    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
-+    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), k_sign.CryptoService.P10, K_SIGN_JUMIN));
->>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
+===
+public void updateUserJumin(User user) {
+    // Legacy encryption
+    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), k_sign.CryptoService.P10, K_SIGN_JUMIN));
+    userDao.update(user);
+}
+>>> REPLACE
+======END======
 ```
 **Explanation:** Change k_sign.CryptoService.P03 to k_sign.CryptoService.P10 and K_SIGN_SSN to K_SIGN_JUMIN.
 
 ### Example 4: Service Layer - Retrieve (Decrypt resident number column, change K_SIGN_SSN to K_SIGN_JUMIN)
-<<<<<<< HEAD
 **Output:**
 ```
 ======FILE======
@@ -258,29 +247,24 @@ src/service/UserService.java
 ======REASON======
 Change k_sign.CryptoService.P03 to k_sign.CryptoService.P10 and K_SIGN_SSN to K_SIGN_JUMIN.
 ======MODIFIED_CODE======
---- a/src/service/UserService.java
-+++ b/src/service/UserService.java
-@@ -4,1 +4,1 @@
--        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
-+        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), k_sign.CryptoService.P10, K_SIGN_JUMIN));
-======END======
-=======
-**Before:**
-```java
-public User getUserById(Long id) {
+<<< SEARCH
+public User getUserJumin(String id) {
     User user = userDao.findById(id);
-    if (user != null) {
+    if (user.getJumin() != null) {
         user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
     }
     return user;
 }
-```
-**After (Unified Diff):**
-```diff
-@@ -4,1 +4,1 @@
--        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), k_sign.CryptoService.P03, K_SIGN_SSN));
-+        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), k_sign.CryptoService.P10, K_SIGN_JUMIN));
->>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
+===
+public User getUserJumin(String id) {
+    User user = userDao.findById(id);
+    if (user.getJumin() != null) {
+        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), k_sign.CryptoService.P10, K_SIGN_JUMIN));
+    }
+    return user;
+}
+>>> REPLACE
+======END======
 ```
 **Explanation:** Change k_sign.CryptoService.P03 to k_sign.CryptoService.P10 and K_SIGN_SSN to K_SIGN_JUMIN.
 
@@ -305,8 +289,5 @@ The following call stacks show the method call relationships from the upper laye
 3. The file_path must use the absolute path provided in source_files.
 4. Do NOT perform any linting or formatting changes such as removing comments, trimming whitespace, or reformatting code. Only modify what is strictly necessary for encryption/decryption.
 5. Do not remove or insert carrige return at the end of each source file. It should be as it is.
-<<<<<<< HEAD
 6. When writing code, you must keep the indentation of the original code.
-=======
->>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7
 

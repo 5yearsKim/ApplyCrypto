@@ -283,3 +283,8 @@ The following call stacks show the method call relationships from the upper laye
 3. The file_path must use the absolute path provided in source_files.
 4. Do NOT perform any linting or formatting changes such as removing comments, trimming whitespace, or reformatting code. Only modify what is strictly necessary for encryption/decryption.
 5. Do not remove or insert carrige return at the end of each source file. It should be as it is.
+<<<<<<< HEAD
+6. When writing code, you must keep the indentation of the original code.
+
+=======
+>>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7

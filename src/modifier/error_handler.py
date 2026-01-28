@@ -93,7 +93,7 @@ class ErrorHandler:
 
         return None, last_error
 
-    def backup_file(self, file_path: Path) -> bool:
+    def backup_file(self, file_path: Path) -> Optional[Path]:
         """
         파일을 백업합니다.
 
@@ -101,12 +101,12 @@ class ErrorHandler:
             file_path: 백업할 파일 경로
 
         Returns:
-            bool: 백업 성공 여부
+            Optional[Path]: 백업된 파일 경로 (실패 시 None)
         """
         try:
             if not file_path.exists():
                 logger.warning(f"백업할 파일이 존재하지 않습니다: {file_path}")
-                return False
+                return None
 
             # 백업 파일 경로 생성
             base_backup_path = file_path.with_suffix(file_path.suffix + ".backup")
@@ -126,11 +126,11 @@ class ErrorHandler:
             self._all_backup_paths.append(backup_path)
 
             logger.debug(f"파일 백업 완료: {file_path} -> {backup_path}")
-            return True
+            return backup_path
 
         except Exception as e:
             logger.error(f"파일 백업 실패: {file_path} - {e}")
-            return False
+            return None
 
     def restore_file(self, file_path: Path) -> bool:
         """

@@ -76,5 +76,8 @@ config_*.json
 
 change_*.diff
 migration_log.txt
+
+prompt_temp
 prompt_temp.md
+prompt_results
 .claude/

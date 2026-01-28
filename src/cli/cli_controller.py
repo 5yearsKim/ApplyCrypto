@@ -1217,8 +1217,11 @@ class CLIController:
             self.logger.info(f"파일 수정을 시작합니다 (모드: {mode})...")
 
             # Debug Manager 초기화
-            generate_full_source = getattr(config, "generate_full_source", True)
-            debug_manager = DebugManager(target_project, generate_full_source=generate_full_source) if args.debug else None
+            if args.debug:
+                debug_manager = DebugManager(config)
+                debug_manager.initialize_debug_directory()
+            else:
+                debug_manager = None
 
             # 분석 결과 확인 및 로드
             self.logger.info("  [1/2] 분석 결과 확인 중...")
@@ -1278,6 +1281,10 @@ class CLIController:
                     self.logger.info(f"    ✗ 테이블 '{table_info.table_name}' 컨텍스트 생성 실패 (결과 없음)")
                     continue
 
+                if args.debug and debug_manager and contexts:
+                     debug_manager.log_contexts(contexts)
+                
+
                 # 2. 계획 생성 및 적용
                 for context in tqdm(contexts, desc="파일 수정 처리 중", unit="file"):
                     try:
@@ -1286,15 +1293,23 @@ class CLIController:
                         if not context_plans:
                             continue
 
+                        if args.debug and debug_manager:
+                            debug_manager.log_plans(context_plans, context.table_name)
+
                         # 생성된 계획 즉시 적용
                         for plan in context_plans:
                             # 디버그 모드일 경우 diff 저장
-                            if args.debug and debug_manager:
-                                debug_manager.log_diff(plan)
                             # 적용 (이미 실패/스킵된 계획도 내부적으로 처리됨)
                             res = code_modifier.apply_plan(
                                 plan, dry_run=args.dry_run
                             )
+
+                            if args.debug and debug_manager and res.get("status") == "success":
+                                debug_manager.log_diff(
+                                    backup_path=res.get("backup_path"), 
+                                    file_path=res.get("file_path")
+                                )
+
                             table_modifications.append(res)
 
                             status = res.get("status")

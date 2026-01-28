@@ -65,7 +65,8 @@ class ResultTracker:
         layer: str,
         modification_type: str,
         status: str,
-        diff: Optional[str] = None,
+        modified_code: Optional[str] = None,
+        backup_path: Optional[str] = None,
         error: Optional[str] = None,
         tokens_used: int = 0,
         reason: Optional[str] = None,
@@ -78,7 +79,8 @@ class ResultTracker:
             layer: 파일 레이어
             modification_type: 수정 타입 ("plaintext" 또는 "partial_encryption")
             status: 수정 상태 ("success" 또는 "failed")
-            diff: 수정 전후 차이 (Unified Format, 선택적)
+            modified_code: 수정된 코드 내용 (선택적)
+            backup_path: 백업 파일 경로 (선택적)
             error: 에러 메시지 (선택적)
             tokens_used: 사용된 토큰 수
             reason: 수정/스킵 이유 (선택적, error와 별개로 기록)
@@ -95,8 +97,11 @@ class ResultTracker:
             "tokens_used": tokens_used,
         }
 
-        if diff:
-            modification_info["diff"] = diff
+        if modified_code:
+            modification_info["modified_code"] = modified_code
+
+        if backup_path:
+            modification_info["backup_path"] = backup_path
 
         if error:
             modification_info["error"] = error

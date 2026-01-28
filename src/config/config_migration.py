@@ -99,6 +99,28 @@ class ConfigMigration:
             config_data["framework_type"] = self.DEFAULT_FRAMEWORK_TYPE
             migrated = True
 
+        # 3. generate_full_source -> generate_type 마이그레이션
+        if "generate_full_source" in config_data:
+            generate_full_source = config_data["generate_full_source"]
+            # generate_full_source가 True이면 "full_source", False이면 "diff"
+            # (기본값이 "diff"이므로 명시적으로 설정)
+            if generate_full_source:
+                generate_type = "full_source"
+            else:
+                generate_type = "diff"
+            
+            old_values["generate_full_source"] = generate_full_source
+            new_values["generate_type"] = generate_type
+            changes.append(
+                f"generate_full_source ({generate_full_source}) -> generate_type ({generate_type})"
+            )
+            
+            config_data["generate_type"] = generate_type
+            if update_file:
+                # generate_full_source 제거
+                del config_data["generate_full_source"]
+            migrated = True
+
         # 파일 업데이트
         backup_path = None
         if update_file and migrated:

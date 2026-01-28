@@ -105,14 +105,11 @@ class WatsonXAIProvider(LLMProvider):
             messages = [{"role": "user", "content": prompt}]
 
             # 파라미터 설정
-            params = {}
-            if max_tokens:
-                params["max_tokens"] = max_tokens
-            else:
-                params["max_tokens"] = 100000
-
-            if temperature is not None:
-                params["temperature"] = temperature
+            params = {
+                "max_tokens": max_tokens or 100000,
+                "temperature": 0.0,
+                "top_p": 1.0
+            }
 
             # API 호출 (ModelInference의 chat 메서드 사용)
             response = self.model_inference.chat(messages=messages, params=params)

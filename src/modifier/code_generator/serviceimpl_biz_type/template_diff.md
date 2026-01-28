@@ -60,100 +60,69 @@ If you determine that a modification is needed based on the code's context, appl
 ## Few-shot Examples
 
 ### Example 1: DAO Layer - Save (Encrypt plain data columns)
-
-**Before:**
-
-```java
-public void insertUser(User user) {
-    sqlSession.insert("UserMapper.insert", user);
-}
-```
-
-**After:**
-
-```java
-public void insertUser(User user) {
-    user.setName(k_sign.CryptoService.encrypt(user.getName(), K_SIGN_NAME));
-    user.setDob(k_sign.CryptoService.encrypt(user.getDob(), K_SIGN_DOB));
-    user.setGender(k_sign.CryptoService.encrypt(user.getGender(), K_SIGN_GENDER));
-    sqlSession.insert("UserMapper.insert", user);
-}
+**Unified Diff:**
+```diff
+--- a/src/dao/UserDao.java
++++ b/src/dao/UserDao.java
+@@ -1,3 +1,6 @@
+ public void insertUser(User user) {
++    user.setName(k_sign.CryptoService.encrypt(user.getName(), K_SIGN_NAME));
++    user.setDob(k_sign.CryptoService.encrypt(user.getDob(), K_SIGN_DOB));
++    user.setGender(k_sign.CryptoService.encrypt(user.getGender(), K_SIGN_GENDER));
+     sqlSession.insert("UserMapper.insert", user);
+ }
 ```
 
 **Explanation:** Encrypt transformation for plain data columns before saving.
 
 ### Example 2: DAO Layer - Retrieve (Decrypt plain data columns)
-
-**Before:**
-
-```java
-public User selectUserById(Long id) {
-    return sqlSession.selectOne("UserMapper.selectById", id);
-}
-```
-
-**After:**
-
-```java
-public User selectUserById(Long id) {
-    User user = sqlSession.selectOne("UserMapper.selectById", id);
-    if (user != null) {
-        user.setName(k_sign.CryptoService.decrypt(user.getName(), K_SIGN_NAME));
-        user.setDob(k_sign.CryptoService.decrypt(user.getDob(), K_SIGN_DOB));
-        user.setGender(k_sign.CryptoService.decrypt(user.getGender(), K_SIGN_GENDER));
-    }
-    return user;
-}
+**Unified Diff:**
+```diff
+--- a/src/dao/UserDao.java
++++ b/src/dao/UserDao.java
+@@ -1,3 +1,8 @@
+ public User selectUserById(Long id) {
+-    return sqlSession.selectOne("UserMapper.selectById", id);
++    User user = sqlSession.selectOne("UserMapper.selectById", id);
++    if (user != null) {
++        user.setName(k_sign.CryptoService.decrypt(user.getName(), K_SIGN_NAME));
++        user.setDob(k_sign.CryptoService.decrypt(user.getDob(), K_SIGN_DOB));
++        user.setGender(k_sign.CryptoService.decrypt(user.getGender(), K_SIGN_GENDER));
++    }
++    return user;
+ }
 ```
 
 **Explanation:** Decrypt encrypted plain data columns before returning after retrieval.
 
 ### Example 3: DAO Layer - Save (Encrypt resident number column, change K_SIGN_SSN to K_SIGN_JUMIN)
-
-**Before:**
-
-```java
-public void insertUser(User user) {
-    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), K_SIGN_SSN));
-    sqlSession.insert("UserMapper.insert", user);
-}
-```
-
-**After:**
-
-```java
-public void insertUser(User user) {
-    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), K_SIGN_JUMIN));
-    sqlSession.insert("UserMapper.insert", user);
-}
+**Unified Diff:**
+```diff
+--- a/src/dao/UserDao.java
++++ b/src/dao/UserDao.java
+@@ -1,4 +1,4 @@
+ public void insertUser(User user) {
+-    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), K_SIGN_SSN));
++    user.setJumin(k_sign.CryptoService.encrypt(user.getJumin(), K_SIGN_JUMIN));
+     sqlSession.insert("UserMapper.insert", user);
+ }
 ```
 
 **Explanation:** Change K_SIGN_SSN to K_SIGN_JUMIN.
 
 ### Example 4: DAO Layer - Retrieve (Decrypt resident number column, change K_SIGN_SSN to K_SIGN_JUMIN)
-
-**Before:**
-
-```java
-public User selectUserById(Long id) {
-    User user = sqlSession.selectOne("UserMapper.selectById", id);
-    if (user != null) {
-        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), K_SIGN_SSN));
-    }
-    return user;
-}
-```
-
-**After:**
-
-```java
-public User selectUserById(Long id) {
-    User user = sqlSession.selectOne("UserMapper.selectById", id);
-    if (user != null) {
-        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), K_SIGN_JUMIN));
-    }
-    return user;
-}
+**Unified Diff:**
+```diff
+--- a/src/dao/UserDao.java
++++ b/src/dao/UserDao.java
+@@ -3,5 +3,5 @@
+     User user = sqlSession.selectOne("UserMapper.selectById", id);
+     if (user != null) {
+-        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), K_SIGN_SSN));
++        user.setJumin(k_sign.CryptoService.decrypt(user.getJumin(), K_SIGN_JUMIN));
+     }
+     return user;
+ }
 ```
 
 **Explanation:** Change K_SIGN_SSN to K_SIGN_JUMIN.
@@ -219,3 +188,8 @@ public void insertUser(User user) {
 4. Strictly follow the Unified Diff format.
 5. The file_path must use the absolute path provided in source_files.
 6. Change K_SIGN_SSN to K_SIGN_JUMIN.
+<<<<<<< HEAD
+7. When writing code, you must keep the indentation of the original code.
+
+=======
+>>>>>>> 9eaca19ff4e15feae388bdd146ca29508a7a86e7

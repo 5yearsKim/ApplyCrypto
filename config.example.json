@@ -7,8 +7,7 @@
   "sql_wrapping_type": "mybatis",
   "framework_type": "SpringMVC",
   "llm_provider": "watsonx_ai",
-  "generate_full_source": true,
-
+  "generate_type": "full_source",
   "access_tables": [
     {
       "table_name": "tb_employee",

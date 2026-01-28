@@ -76,7 +76,18 @@ class ThreeStepCodeGenerator(BaseMultiStepCodeGenerator):
         template_dir = Path(__file__).parent
         self.data_mapping_template_path = template_dir / "data_mapping_template.md"
         self.planning_template_path = template_dir / "planning_template.md"
-        self.execution_template_path = template_dir / "execution_template.md"
+
+
+        if self.config.generate_type == "full_source":
+            execution_template_name = "execution_template_full.md"
+        elif self.config.generate_type == "diff":
+            execution_template_name = "execution_template_diff.md"
+        else:
+            raise NotImplementedError(
+                f"Unsupported generate_type for ThreeStepCodeGenerator: {self.config.generate_type}"
+            )
+
+        self.execution_template_path = template_dir / execution_template_name
 
         for template_path in [
             self.data_mapping_template_path,
@@ -266,7 +277,11 @@ class ThreeStepCodeGenerator(BaseMultiStepCodeGenerator):
         table_info_str = json.dumps(table_info, indent=2, ensure_ascii=False)
 
         # 소스 파일 내용
-        source_files_str = self._read_file_contents(modification_context.file_paths)
+        add_line_num: bool = self.config and self.config.generate_type != 'full_source'
+        source_files_str = self._read_file_contents(
+            modification_context.file_paths,
+            add_line_num=add_line_num
+        )
 
         # mapping_info (Phase 1 결과)를 JSON 문자열로 변환
         mapping_info_str = json.dumps(mapping_info, indent=2, ensure_ascii=False)
