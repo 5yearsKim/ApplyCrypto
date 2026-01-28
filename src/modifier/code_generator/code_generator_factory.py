@@ -70,13 +70,22 @@ class CodeGeneratorFactory:
             return TwoStepCodeGenerator(config=config)
 
         elif modification_type == "ThreeStep":
-            from .three_step_type.three_step_code_generator import (
-                ThreeStepCodeGenerator,
-            )
+            # CCS 프로젝트 여부에 따라 적절한 ThreeStep 생성기 선택
+            sql_wrapping_type = config.sql_wrapping_type
+            if sql_wrapping_type in ("mybatis_ccs", "mybatis_ccs_batch"):
+                from .three_step_type.three_step_ccs_code_generator import (
+                    ThreeStepCCSCodeGenerator,
+                )
 
-            # ThreeStep은 내부에서 자체적으로 LLM Provider를 생성하므로
-            # llm_provider 파라미터는 사용하지 않음
-            return ThreeStepCodeGenerator(config=config)
+                # CCS 전용: resultMap 기반 필드 매핑 사용
+                return ThreeStepCCSCodeGenerator(config=config)
+            else:
+                from .three_step_type.three_step_code_generator import (
+                    ThreeStepCodeGenerator,
+                )
+
+                # 일반: VO 파일 전체 포함
+                return ThreeStepCodeGenerator(config=config)
 
         else:
             raise ValueError(
