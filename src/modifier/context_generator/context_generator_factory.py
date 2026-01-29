@@ -37,6 +37,8 @@ class ContextGeneratorFactory:
         """
         if config.sql_wrapping_type == "jdbc":
             return JdbcContextGenerator(config, code_generator)
+        if config.sql_wrapping_type == "mybatis" and config.modification_type == "typehandler":
+            return TypehandlerContextGenerator(config, code_generator)
         elif config.sql_wrapping_type == "mybatis":
             return MybatisContextGenerator(config, code_generator)
         elif config.sql_wrapping_type == "mybatis_ccs":

@@ -123,6 +123,7 @@ class MyBatisSQLExtractor(SQLExtractor):
                         "result_field_mappings": query.get("result_field_mappings", []),
                         # SQL 내 #{fieldName} 패턴 (INSERT/UPDATE용)
                         "parameter_field_mappings": query.get("parameter_field_mappings", []),
+                        "xml_file_path": xml_file.path,
                     }
 
                     sql_queries.append(
@@ -215,6 +216,11 @@ class MyBatisSQLExtractor(SQLExtractor):
             if result_map_file:
                 layer_files[layer_name].add(result_map_file)
                 all_files.add(result_map_file)
+
+        xml_file_path = strategy_specific.get("xml_file_path")
+        if xml_file_path:
+            layer_files["xml"].add(xml_file_path)
+            all_files.add(xml_file_path)
 
         # method_string 생성: namespace의 class_name + sql query의 id
         method_string = None
