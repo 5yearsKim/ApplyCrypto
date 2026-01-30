@@ -1,6 +1,8 @@
 import logging
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional
+
+from models.table_access_info import TableAccessInfo
 
 from models.modification_context import ModificationContext
 
@@ -21,6 +23,7 @@ class JdbcContextGenerator(BaseContextGenerator):
         layer_files: Dict[str, List[str]],
         table_name: str,
         columns: List[Dict],
+        table_access_info: Optional[TableAccessInfo] = None,
     ) -> List[ModificationContext]:
         """
         Generates modification contexts with JDBC-specific grouping logic.

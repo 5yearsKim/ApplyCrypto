@@ -9,6 +9,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Dict, List, Optional
+from models.table_access_info import TableAccessInfo
 
 from modifier.context_generator.mybatis_context_generator import MybatisContextGenerator
 from models.modification_context import ModificationContext
@@ -341,6 +342,7 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
         layer_files: Dict[str, List[str]],
         table_name: str,
         columns: List[Dict],
+        table_access_info: Optional[TableAccessInfo] = None,
     ) -> List[ModificationContext]:
         """
         AnyframeCCS용 context 생성

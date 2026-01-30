@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
+from models.table_access_info import TableAccessInfo
 from modifier.context_generator.base_context_generator import BaseContextGenerator
 from models.modification_context import ModificationContext
 
@@ -20,6 +21,7 @@ class PerLayerContextGenerator(BaseContextGenerator):
         layer_files: Dict[str, List[str]],
         table_name: str,
         columns: List[Dict],
+        table_access_info: Optional[TableAccessInfo] = None,
     ) -> List[ModificationContext]:
         """
         Generates modification contexts. Failed files are logged.

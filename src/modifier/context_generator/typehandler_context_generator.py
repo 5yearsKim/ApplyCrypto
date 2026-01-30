@@ -1,11 +1,12 @@
 import logging
 import os
 from pathlib import Path
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Tuple
+from models.table_access_info import TableAccessInfo
 
+import re
 from modifier.context_generator.base_context_generator import BaseContextGenerator
 from models.modification_context import ModificationContext
-from parser.xml_mapper_parser import XMLMapperParser
 
 logger = logging.getLogger("applycrypto.context_generator")
 
@@ -31,14 +32,7 @@ class TypehandlerContextGenerator(BaseContextGenerator):
         Returns:
             int: Estimated token count.
         """
-        try:
-            import tiktoken
-
-            encoder = tiktoken.encoding_for_model("gpt-4")
-            return len(encoder.encode(text))
-        except Exception:
-            # Fallback if tiktoken is not available (4 chars = 1 token)
-            return len(text) // 4
+        return len(text) // 4
 
     def _select_vo_files_by_token_budget(
         self,
@@ -132,81 +126,12 @@ class TypehandlerContextGenerator(BaseContextGenerator):
 
         return None
 
-    def _select_relevant_vo_from_xml(
-        self,
-        xml_file: str,
-        repository_files: List[str],
-        vo_files: List[str],
-        xml_parser: XMLMapperParser,
-    ) -> Optional[Tuple[Optional[str], Set[str]]]:
-        """
-        Parses XML and identifies the Mapper Interface and referenced VO files.
-
-        Args:
-            xml_file: Path to the XML file.
-            repository_files: List of repository files.
-            vo_files: List of known VO files.
-            xml_parser: Instance of XMLMapperParser.
-
-        Returns:
-            Optional[Tuple[Optional[str], Set[str]]]:
-                - Tuple of (mapper_interface_file, relevant_vo_paths) if successful.
-                - None if parsing failed or critical error occurred.
-        """
-        mapper_interface_file = None
-        relevant_vo_paths = set()
-
-        try:
-            # 1. Parse XML file using xml_parser's low-level method to get the tree
-            tree, error = xml_parser.parse_file(Path(xml_file))
-            if error or not tree:
-                logger.warning(f"Skipping XML due to parse error: {xml_file}")
-                return None
-
-            root = tree.getroot()
-            
-            # 2. Extract Namespace (Mapper Interface)
-            namespace = root.get("namespace", "")
-            if namespace:
-                mapper_interface_file = self._match_class_to_file_path(
-                    namespace, repository_files
-                )
-                if not mapper_interface_file:
-                    logger.debug(
-                        f"Could not find mapper interface for namespace: {namespace}"
-                    )
-
-            # 3. Extract types from <resultMap>
-            # Fetch value from <resultMap, type=???>
-            used_types = set()
-            
-            # Find all resultMap tags
-            for result_map in root.xpath(".//resultMap"):
-                result_type = result_map.get("type")
-                if result_type:
-                    used_types.add(result_type)
-
-            # 4. Match VOs
-            for type_name in used_types:
-                matched_file = self._match_class_to_file_path(
-                    type_name, repository_files
-                )
-                if matched_file and matched_file in vo_files:
-                    relevant_vo_paths.add(matched_file)
-            
-            return mapper_interface_file, relevant_vo_paths
-
-        except Exception as e:
-            logger.warning(f"Error processing XML file {xml_file} in _select_relevant_vo_from_xml: {e}")
-            return None
-
-
-
     def generate(
         self,
         layer_files: Dict[str, List[str]],
         table_name: str,
         columns: List[Dict],
+        table_access_info: Optional[TableAccessInfo] = None,
     ) -> List[ModificationContext]:
         """
         Generates modification contexts for TypeHandler application (XML focus).
@@ -216,13 +141,17 @@ class TypehandlerContextGenerator(BaseContextGenerator):
                          Expected keys: 'xml', 'repository'.
             table_name: Table name.
             columns: List of columns.
+            table_access_info: TableAccessInfo object containing SQL queries.
 
         Returns:
             List[ModificationContext]: The generated batches of contexts.
         """
         all_batches: List[ModificationContext] = []
 
-        # Collected files should be only "repository" and "xml"
+        if not table_access_info:
+            logger.warning("TableAccessInfo is required for TypeHandler generation but not provided.")
+            return all_batches
+
         xml_files = layer_files.get("xml", [])
         repository_files = layer_files.get("repository", [])
         
@@ -230,57 +159,71 @@ class TypehandlerContextGenerator(BaseContextGenerator):
             logger.info("No XML files found for TypeHandler generation.")
             return all_batches
 
-        # Separate VOs and Interfaces from repository files
-        # Heuristic: VOs usually end with VO.java (or DTO.java)
-        vo_files = [
-            x for x in repository_files 
-            if x.lower().endswith("vo.java") 
-            or x.lower().endswith("dto.java")
-            or x.lower().endswith("daomodel.java") 
-            or x.lower() == "employee.java"  # Exception for book-ssm. production 에서는 지우세요~
-        ]
+        # Collect VOs from SQL queries
+        namespace_to_vos: Dict[str, Set[str]] = {}
         
-        # Mapper Interfaces might be the rest, or we just search in all repository_files
-        
-        xml_parser = XMLMapperParser()
-
-        for xml_file in xml_files:
-            result = self._select_relevant_vo_from_xml(
-                xml_file, repository_files, vo_files, xml_parser
-            )
+        for query in table_access_info.sql_queries:
+            strategy_specific = query.get("strategy_specific", {})
+            namespace = strategy_specific.get("namespace")
+            result_type = strategy_specific.get("result_type")
             
-            if result is None:
+            if not namespace:
                 continue
                 
-            mapper_interface_file, relevant_vo_paths = result
+            if namespace not in namespace_to_vos:
+                namespace_to_vos[namespace] = set()
+                
+            if result_type:
+                vo_file = self._match_class_to_file_path(result_type, repository_files)
+                if vo_file:
+                    namespace_to_vos[namespace].add(vo_file)
 
-            # 5. Filter VOs by token budget
-            context_vo_files = self._select_vo_files_by_token_budget(
-                vo_files=vo_files,  # list of all VOs for reference/validation
-                required_vos=relevant_vo_paths,
-                max_tokens=self.MAX_VO_TOKENS
-            )
+        # Process each XML file
+        for xml_file in xml_files:
+            try:
+                with open(xml_file, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    
+                # Extract namespace using regex to avoid XML parser dependency
+                match = re.search(r'namespace=["\']([^"\']+)["\']', content)
+                if not match:
+                    continue
+                    
+                namespace = match.group(1)
+                
+                relevant_vo_paths = namespace_to_vos.get(namespace, set())
+                
+                # Find Mapper Interface
+                mapper_interface_file = self._match_class_to_file_path(namespace, repository_files)
+                
+                # Select VOs by token budget
+                context_vo_files = self._select_vo_files_by_token_budget(
+                    vo_files=list(relevant_vo_paths),
+                    required_vos=relevant_vo_paths,
+                    max_tokens=self.MAX_VO_TOKENS
+                )
 
-            logger.info(
-                f"Generated context for XML {Path(xml_file).name}: "
-                f"Mapper={Path(mapper_interface_file).name if mapper_interface_file else 'None'}, "
-                f"VOs={len(context_vo_files)}"
-            )
+                logger.info(
+                    f"Generated context for XML {Path(xml_file).name}: "
+                    f"Mapper={Path(mapper_interface_file).name if mapper_interface_file else 'None'}, "
+                    f"VOs={len(context_vo_files)}"
+                )
 
-            # 6. Create Batch
-            # Main files to edit: XML (and potentially Mapper Interface)
-            # Context: VOs
-            group_files = [xml_file]
-            if mapper_interface_file:
-                group_files.append(mapper_interface_file)
+                group_files = [xml_file]
+                if mapper_interface_file:
+                    group_files.append(mapper_interface_file)
 
-            batches = self.create_batches(
-                file_paths=group_files,
-                table_name=table_name,
-                columns=columns,
-                layer="repository", # Keeping 'repository' since it involves repo layer
-                context_files=context_vo_files
-            )
-            all_batches.extend(batches)
+                batches = self.create_batches(
+                    file_paths=group_files,
+                    table_name=table_name,
+                    columns=columns,
+                    layer="repository",
+                    context_files=context_vo_files
+                )
+                all_batches.extend(batches)
+                
+            except Exception as e:
+                logger.warning(f"Error processing XML file {xml_file}: {e}")
+                continue
 
         return all_batches

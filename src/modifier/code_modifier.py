@@ -122,6 +122,7 @@ class CodeModifier:
             layer_files=table_access_info.layer_files,
             table_name=table_access_info.table_name,
             columns=table_access_info.columns,
+            table_access_info=table_access_info,
         )
 
     def generate_plan(

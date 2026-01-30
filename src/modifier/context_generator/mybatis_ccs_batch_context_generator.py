@@ -11,7 +11,8 @@ BAT.java 파일을 수정 대상으로, BATVO.java 파일을 context로 포함�
 """
 
 import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
+from models.table_access_info import TableAccessInfo
 
 from models.modification_context import ModificationContext
 
@@ -68,6 +69,7 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
         layer_files: Dict[str, List[str]],
         table_name: str,
         columns: List[Dict],
+        table_access_info: Optional[TableAccessInfo] = None,
     ) -> List[ModificationContext]:
         """
         CCS 배치용 context 생성

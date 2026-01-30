@@ -14,6 +14,9 @@ from modifier.context_generator.mybatis_ccs_context_generator import (
 from modifier.context_generator.mybatis_ccs_batch_context_generator import (
     MybatisCCSBatchContextGenerator,
 )
+from modifier.context_generator.typehandler_context_generator import (
+    TypehandlerContextGenerator,
+)
 
 
 class ContextGeneratorFactory:
@@ -37,7 +40,7 @@ class ContextGeneratorFactory:
         """
         if config.sql_wrapping_type == "jdbc":
             return JdbcContextGenerator(config, code_generator)
-        if config.sql_wrapping_type == "mybatis" and config.modification_type == "typehandler":
+        if config.sql_wrapping_type == "mybatis" and config.modification_type == "TypeHandler":
             return TypehandlerContextGenerator(config, code_generator)
         elif config.sql_wrapping_type == "mybatis":
             return MybatisContextGenerator(config, code_generator)

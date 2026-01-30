@@ -2,11 +2,12 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from config.config_manager import Configuration
 from models.code_generator import CodeGeneratorInput
 from models.modification_context import ModificationContext
+from models.table_access_info import TableAccessInfo
 
 from modifier.code_generator.base_code_generator import BaseCodeGenerator
 
@@ -28,6 +29,7 @@ class BaseContextGenerator(ABC):
         layer_files: Dict[str, List[str]],
         table_name: str,
         columns: List[Dict],
+        table_access_info: Optional["TableAccessInfo"] = None,
     ) -> List[ModificationContext]:
         """
         Generates modification contexts.
@@ -36,6 +38,7 @@ class BaseContextGenerator(ABC):
             layer_files: Dictionary of layer names and their corresponding file paths.
             table_name: Name of the table.
             columns: List of columns accessed.
+            table_access_info: TableAccessInfo object (optional).
 
         Returns:
             List[ModificationContext]: The generated batches of contexts.

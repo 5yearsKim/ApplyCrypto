@@ -58,7 +58,7 @@ class CodeGeneratorFactory:
                 TypeHandlerCodeGenerator,
             )
 
-            return TypeHandlerCodeGenerator(llm_provider=llm_provider, config=config)
+            return TypeHandlerCodeGenerator(config=config)
 
         elif modification_type == "TwoStep":
             from .two_step_type.two_step_code_generator import (

@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import List, Dict, Optional
+from models.table_access_info import TableAccessInfo
 from pathlib import Path
 
 from modifier.context_generator.base_context_generator import BaseContextGenerator
@@ -124,6 +125,7 @@ class MybatisContextGenerator(BaseContextGenerator):
         layer_files: Dict[str, List[str]],
         table_name: str,
         columns: List[Dict],
+        table_access_info: Optional[TableAccessInfo] = None,
     ) -> List[ModificationContext]:
         """
         Generates modification contexts based on import relationships between Controller, Service, and Repository layers.

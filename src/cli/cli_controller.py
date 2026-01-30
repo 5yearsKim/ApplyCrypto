@@ -1200,10 +1200,6 @@ class CLIController:
             persistence_manager = DataPersistenceManager(target_project)
 
 
-            # modification_type에 따른 분기 처리
-            if config.modification_type == "TypeHandler":
-                self.logger.info("Type Handler 모드로 수정을 진행합니다.")
-                return self._handle_modify_with_type_handler(args, config)
 
             # Call Chain 모드 분기 (기존 호환성을 위해 유지)
             # TODO: call_chain은 향후 modification_type으로 통합 예정
@@ -1384,40 +1380,7 @@ class CLIController:
             self.logger.error(f"오류: {e}")
             return 1
 
-    def _handle_modify_with_type_handler(
-        self, args: argparse.Namespace, config: Configuration
-    ) -> int:
-        """
-        Type Handler 방식으로 암복호화를 적용하는 핸들러
 
-        Type Handler를 사용하면 Java 비즈니스 로직을 직접 수정하지 않고,
-        MyBatis TypeHandler 클래스를 생성하여 XML 매퍼에 등록합니다.
-
-        Args:
-            args: 파싱된 인자
-            config: 설정 객체
-
-        Returns:
-            int: 종료 코드
-        """
-        try:
-            from generator.type_handler_generator import TypeHandlerGenerator
-
-            self.logger.info("Type Handler Generator 초기화...")
-            generator = TypeHandlerGenerator(config)
-
-            return generator.execute(dry_run=args.dry_run, apply_all=True)
-
-        except ImportError as e:
-            self.logger.error(f"Type Handler Generator 모듈을 로드할 수 없습니다: {e}")
-            self.logger.error(
-                f"오류: Type Handler Generator 모듈을 로드할 수 없습니다: {e}"
-            )
-            return 1
-        except Exception as e:
-            self.logger.exception(f"Type Handler 수정 중 오류: {e}")
-            self.logger.error(f"오류: {e}")
-            return 1
 
     def _handle_modify_with_call_chain(
         self, args: argparse.Namespace, config: Configuration
