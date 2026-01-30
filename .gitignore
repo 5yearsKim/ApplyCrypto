@@ -83,3 +83,5 @@ prompt_results
 .claude/
 
 src/modifier/code_generator/**/*template*.md
+
+*_specific_map.json
